@@ -4,7 +4,11 @@ library(tidyverse)
 library(tidylog)
 library(lubridate)
 
-
+install.packages("ggh4x")
+library(ggh4x)
+getwd()
+## output file for figures
+out.dir <- "/Users/katieirving/Library/CloudStorage/OneDrive-SCCWRP/Documents - Katie’s MacBook Pro/git/SGR_Flows_AMP/Figures/"
 
 # Upload data -------------------------------------------------------------
 
@@ -86,11 +90,17 @@ p1 <- ggplot(alldata, aes(x=Year, y=Values)) +
 
 p1
 
+out.filename <- paste0(out.dir,"00_boxplot_SWP_CV_annual.jpg")
+ggsave(p1, file = out.filename, dpi=300, height=4, width=6)
+
 p2 <- ggplot(alldata, aes(x=Season, y=Values)) + 
   geom_boxplot() +
   facet_wrap(~Variable, scales= "free_y")
 
 p2
+
+out.filename <- paste0(out.dir,"00_boxplot_SWP_CV_seasonal.jpg")
+ggsave(p2, file = out.filename, dpi=300, height=4, width=6)
 
 p3 <- ggplot(alldata, aes(x=Year, y=Values)) + 
   geom_boxplot() +
@@ -98,6 +108,64 @@ p3 <- ggplot(alldata, aes(x=Year, y=Values)) +
 
 p3
 
+out.filename <- paste0(out.dir,"00_boxplot_SWP_CV_seasonal_annual.jpg")
+ggsave(p3, file = out.filename, dpi=300, height=4, width=6)
+
+p4 <- ggplot(alldata, aes(x=Year, y=Values)) + 
+  geom_boxplot()  +
+  ggh4x::facet_grid2(Group ~ Variable, scales = "free_y", independent = "y")
+
+
+p4
+
+out.filename <- paste0(out.dir,"00_boxplot_SWP_CV_Group_annual.jpg")
+ggsave(p4, file = out.filename, dpi=300, height=4, width=6)
+
+p5 <- ggplot(alldata, aes(x=Season, y=Values)) + 
+  geom_boxplot()  +
+  ggh4x::facet_grid2(Group ~ Variable, scales = "free_y", independent = "y")
+
+p5
+
+out.filename <- paste0(out.dir,"00_boxplot_SWP_CV_Group_season.jpg")
+ggsave(p5, file = out.filename, dpi=300, height=4, width=6)
+
+p6 <- ggplot(alldata, aes(x=Year, y=Values)) + 
+  geom_boxplot()  +
+  ggh4x::facet_grid2(Species ~ Variable, scales = "free_y", independent = "y")
+
+p6
+
+out.filename <- paste0(out.dir,"00_boxplot_SWP_CV_species_annual.jpg")
+ggsave(p6, file = out.filename, dpi=300, height=4, width=6)
+
+p7 <- ggplot(alldata, aes(x=Species, y=Values)) + 
+  geom_boxplot()  +
+  facet_wrap(~Variable, scales= "free_y")
+
+p7
+
+out.filename <- paste0(out.dir,"00_boxplot_SWP_CV_species.jpg")
+ggsave(p7, file = out.filename, dpi=300, height=4, width=6)
+
+p8 <- ggplot(alldata, aes(x=Group, y=Values)) + 
+  geom_boxplot()  +
+  facet_wrap(~Variable, scales= "free_y")
+
+p8
+
+out.filename <- paste0(out.dir,"00_boxplot_SWP_CV_group.jpg")
+ggsave(p8, file = out.filename, dpi=300, height=4, width=6)
+
+
+p9 <- ggplot(alldata, aes(x=Replacement, y=Values)) + 
+  geom_boxplot()  +
+  facet_wrap(~Variable, scales= "free_y")
+
+p9
+
+out.filename <- paste0(out.dir,"00_boxplot_SWP_CV_group.jpg")
+ggsave(p8, file = out.filename, dpi=300, height=4, width=6)
 
 # Discharge ---------------------------------------------------------------
 
@@ -160,10 +228,10 @@ q1 <- ggplot(subset(hydrox, Group == "Group 4"), aes(x=Date, y=Q), group = Sourc
 q1
 str(hydrox)
 coeffcfs <- 5000/3
-coeff
+
 
 ## plot rainfall with CFS gages
-cfsSources <- -c("USGSAvgFlow(cfs)","LACDPWF313B(cfs)", "LACDPWG44B(cfs)" )
+cfsSources <- c("USGSAvgFlow(cfs)","LACDPWF313B(cfs)", "LACDPWG44B(cfs)" )
 
 
 q2 <- ggplot(subset(hydrox, Source %in% cfsSources), aes(x=Date, y=Q)) + 
@@ -403,3 +471,21 @@ bioMeanQ_longx <- bioMeanQ_long %>%
    select(-GroupCheck, - Value)  %>% filter(GroupKeep == "Yes") 
 
 save(bioMeanQ_longx, file = "output_data/00_bio_Q_matched_groups.RData")
+
+## plot bio against hydro
+
+names(bioMeanQ_longx)
+
+b1 <- ggplot(bioMeanQ_longx, aes(y=SWP, x=Q)) +
+  geom_smooth(method = "lm")
+
+out.filename <- paste0(out.dir,"00_SWP_Q.jpg")
+ggsave(b1, file = out.filename, dpi=300, height=4, width=6)
+
+
+b2 <- ggplot(bioMeanQ_longx, aes(y=CV, x=Q)) +
+  geom_smooth(method = "lm")
+b2
+
+out.filename <- paste0(out.dir,"00_CV_Q.jpg")
+ggsave(b2, file = out.filename, dpi=300, height=4, width=6)

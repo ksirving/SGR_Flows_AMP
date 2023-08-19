@@ -22,35 +22,34 @@ library(rpart)
 #             ErrorTolerance = 0.01, MaxIterations = 100)
 # tmp
 
-## output file for figures
-out.dir <- "/Users/katieirving/Library/CloudStorage/OneDrive-SCCWRP/Documents - Katie’s MacBook Pro/git/SGR_Flows_AMP/Figures/"
 
 # upload data -------------------------------------------------------------
 
-load(file = "output_data/00_bio_Q_matched_groups.RData")
-head(bioMeanQ_longx)
-names(bioMeanQ_longx)
+load(file = "output_data/00_bio_meanQ_data.RData")
+head(bioMeanQ)
+names(bioMeanQ)
 
 
-# CV model without substrate---------------------------------------------------------------
+# SWP model without substrate---------------------------------------------------------------
 
 ## substrate has NAs, try model without substrate, then with substrate but removing the NAs
 ## rearrange for ease into RF - remove observed rainfall
 
-rf.data <- bioMeanQ_longx %>%
-  dplyr::select(CV, Species:LifeForm, Month, Year, Season, 
-                "DischargeSJC002&POM001Combined(MGD)":"RainFallMod",
-                "POM-001", "TempMeanModF",
-                "SJC-002(MGD)":"Q") %>%
+rf.data <- bioMeanQ %>%
+  dplyr::select(SWP, Species:LifeForm, Month, Year, Season, 
+                "DischargeSJC002&POM001Combined(MGD)":"Replacement") %>%
   rename(SJC002_POM001Combined = "DischargeSJC002&POM001Combined(MGD)",
          DischargeSJC002_POM001_WN001Combined = "DischargeSJC002,POM001,&WN001Combined(MGD)",
+         LACDPWF313B = "LACDPWF313B(MGD)",
+         LACDPWG44B = "LACDPWG44B(MGD)",
+         USGSGauge11087020 = "USGSGauge11087020(MGD)",
          SJC_002 = "SJC-002(MGD)",
          POM001 = "POM-001",
          WN001 = "WN-001", 
          WN002 = "WN-002(Zone1Ditch)") %>%
-  filter(Source %in% c("USGSGauge11087020(MGD)", "LACDPWG44B(MGD)", "LACDPWF313B(MGD)")) %>%
-  drop_na(CV) %>%
-  select(-Source)
+  # filter(Source %in% c("USGSGauge11087020(MGD)", "LACDPWG44B(MGD)", "LACDPWF313B(MGD)")) %>%
+  drop_na(SWP) %>%
+  select(-contains("cfs"), - RainfallIntensity)
 
 rf.data
 # Random Forest Model -----------------------------------------------------
@@ -67,12 +66,11 @@ source("/Users/katieirving/Library/CloudStorage/OneDrive-SCCWRP/Documents - Kati
 
 ## make y data compatible
 rf.data.val <- rf.data %>%
-  rename(y = CV) %>% as.data.frame() %>%
+  rename(y = SWP) %>% as.data.frame() %>%
   mutate(Species = as.factor(Species), Group = as.factor(Group))
 
 str(rf.data)
-
-# sum(is.na(rf.data)) ## 0
+sum(is.na(rf.data)) ## 0
 # 
 # ind <- which(is.na(rf.data$Substrate))
 # rf.data[ind,]
@@ -90,12 +88,12 @@ names(training)
 #                          classProbs = F,summaryFunction = twoClassSummary,returnResamp="all")
 
 rf <- randomForest(y~., data=training, importance = T)
-mean(rf$rsq) ## 0.2
+mean(rf$rsq) ## 0.6
 varImpPlot(rf)
-imp <- importance(rf, type = 1)
+importance(rf, type = 1)
 
 # PLOT VARIABLE IMPORTANCE
-pdf(paste0( "Figures/01_var_imp_full_model_CV.pdf"), width=12, height=8)
+pdf(paste0( "Figures/var_imp_full_model_groups_not_matched.pdf"), width=25, height=15)
 
 varImpPlot(rf)
 
@@ -129,7 +127,7 @@ rf.data.red <- rf.data %>%
   mutate(Species = as.factor(Species), Group = as.factor(Group))
 
 rf.data.val <- rf.data.red %>%
-  rename(y = CV) %>% as.data.frame()
+  rename(y = SWP) %>% as.data.frame()
 str(rf.data.red)
 # sum(is.na(rf.data)) ## 0
 # 
@@ -199,20 +197,17 @@ par(op)
 
 # Remove negative importance variables ------------------------------------
 impvar 
-imp <- as.data.frame(imp)
-
-vars <- ifelse(imp$`%IncMSE` > 0, rownames(imp), NA)
-vars <- vars[!is.na(vars)]
-vars
+imp
 names(rf.data)
 ## WN001, WN002, POM001, RainFallMod, TempMeanModF, 
 
 rf.data.red <- rf.data %>%
-  select(CV, all_of(vars), -LifeForm) %>%
+  select(-LifeForm, -Month,  -WN002, -WN001, -POM001,-USGSGauge11087020,
+         -LACDPWG44B, -RainFallMod, -TempMeanModF, -LACDPWG44B ) %>%
   mutate(Species = as.factor(Species), Group = as.factor(Group))
 
 rf.data.val <- rf.data.red %>%
-  rename(y = CV) %>% as.data.frame()
+  rename(y = SWP) %>% as.data.frame()
 str(rf.data.red)
 # sum(is.na(rf.data)) ## 0
 # 
@@ -232,13 +227,13 @@ names(training)
 #                          classProbs = F,summaryFunction = twoClassSummary,returnResamp="all")
 
 rf <- randomForest(y~., data=rf.data.val, importance = T, ntree = 1000)
-mean(rf$rsq) ## 0.32
+mean(rf$rsq) ## 0.65
 rf
 varImpPlot(rf)
 importance(rf, type = 1)
 
 # PLOT VARIABLE IMPORTANCE
-pdf(paste0( "Figures/var_imp_reduced_model_CV.pdf"), width=12, height=8)
+pdf(paste0( "Figures/var_imp_reduced_model_groups_not_matched.pdf"), width=25, height=15)
 
 varImpPlot(rf)
 
@@ -292,7 +287,7 @@ rf.data.red <- rf.data %>%
   mutate( Group = as.factor(Group))
 
 rf.data.val <- rf.data.red %>%
-  rename(y = CV) %>% as.data.frame()
+  rename(y = SWP) %>% as.data.frame()
 str(rf.data.red)
 # sum(is.na(rf.data)) ## 0
 # 
@@ -377,27 +372,25 @@ library(lme4)
 # install.packages("glmmTMB")
 library(glmmTMB)
 
-## data
-load(file = "output_data/00_bio_Q_matched_groups.RData")
-head(bioMeanQ_longx)
-names(bioMeanQ_longx)
-
-rf.data <- bioMeanQ_longx %>%
-  dplyr::select(CV, Species:LifeForm, Month, Year, Season, 
-                "DischargeSJC002&POM001Combined(MGD)":"RainFallMod",
-                "POM-001", "TempMeanModF",
-                "SJC-002(MGD)":"Q") %>%
-  rename(SJC002_POM001Combined = "DischargeSJC002&POM001Combined(MGD)",
-         DischargeSJC002_POM001_WN001Combined = "DischargeSJC002,POM001,&WN001Combined(MGD)",
-         SJC_002 = "SJC-002(MGD)",
-         POM001 = "POM-001",
-         WN001 = "WN-001", 
-         WN002 = "WN-002(Zone1Ditch)") %>%
-  filter(Source %in% c("USGSGauge11087020(MGD)", "LACDPWG44B(MGD)", "LACDPWF313B(MGD)")) %>%
-  drop_na(CV) %>%
-  select(-Source) %>%
-  mutate(Year = as.integer(Year),
-         Group = as.character(Group))
+# ## data
+# load(file = "output_data/00_bio_Q_matched_groups.RData")
+# head(bioMeanQ_longx)
+# names(bioMeanQ_longx)
+# 
+# rf.data <- bioMeanQ_longx %>%
+#   dplyr::select(SWP, Species:LifeForm, Month, Year, Season, 
+#                 "DischargeSJC002&POM001Combined(MGD)":"RainFallMod",
+#                 "POM-001", "TempMeanModF",
+#                 "SJC-002(MGD)":"Q") %>%
+#   rename(SJC002_POM001Combined = "DischargeSJC002&POM001Combined(MGD)",
+#          DischargeSJC002_POM001_WN001Combined = "DischargeSJC002,POM001,&WN001Combined(MGD)",
+#          SJC_002 = "SJC-002(MGD)",
+#          POM001 = "POM-001",
+#          WN001 = "WN-001", 
+#          WN002 = "WN-002(Zone1Ditch)") %>%
+#   filter(Source %in% c("USGSGauge11087020(MGD)", "LACDPWG44B(MGD)", "LACDPWF313B(MGD)")) %>%
+#   drop_na(SWP) %>%
+#   select(-Source)
 
 head(rf.data)
 names(rf.data)
@@ -406,9 +399,9 @@ names(rf.data)
 
 ## fixed effects - Q, SJC_002, replacement,  DischargeSJC002_POM001_WN001Combined
 
-mod1 <- lmer(formula = CV ~ Q + SJC_002 + Replacement + SJC002_POM001Combined + Year + Group +
-               # (1|Year) + ## remove due to low ICC
-               # (1|Group) + ## remove due to low ICC
+mod1 <- lmer(formula = SWP ~ LACDPWF313B + LACDPWG44B + USGSGauge11087020+ SJC_002 + Replacement + DischargeSJC002_POM001_WN001Combined +
+               (1|Year) + ## remove due to low ICC
+               (1|Group) + ## remove due to low ICC - still no difference with unmatched groups
                (1|Species) +
                (1|Season),
              data    = rf.data) 
@@ -417,7 +410,7 @@ summary(mod1)
 anova(mod1)
 check_singularity(mod1) ## False
 icc(mod1, by_group = TRUE)
-r2_nakagawa(mod1) ## 0.26
+r2_nakagawa(mod1) ## 0.62
 
 set_theme(base = theme_classic(), #To remove the background color and the grids
           theme.font = 'serif',   #To change the font type
@@ -430,71 +423,14 @@ set_theme(base = theme_classic(), #To remove the background color and the grids
 
 ests <- sjPlot::plot_model(mod1, 
                            show.values=TRUE, show.p=TRUE,
-                           title="Drivers of CV")
+                           title="Drivers of SWP")
 
 ests
-file.name1 <- paste0(out.dir, "effect_sizes_drivers_of_CV.jpg")
+file.name1 <- paste0(out.dir, "effect_sizes_drivers_of_SWP.jpg")
 ggsave(ests, filename=file.name1, dpi=300, height=8, width=10)
 
-### plot random effects
-random <- plot_model(mod1, type="re",
-                     vline.color="#A9A9A9", dot.size=1.5,
-                     show.values=T, value.offset=.2, show.p=TRUE)
 
-r1 <- random[[1]]
-
-r1
-
-out.filename <- paste0(out.dir,"00_mixed_mod_CV_random_effects_species.jpg")
-ggsave(r1, file = out.filename, dpi=300, height=4, width=6)
-
-r2 <- random[[2]]
-
-r2
-
-out.filename <- paste0(out.dir,"00_mixed_mod_CV_random_effects_season.jpg")
-ggsave(r2, file = out.filename, dpi=300, height=4, width=6)
-
-### plot realtionships
-results <- plot_model(mod1, type="pred",
-                      vline.color="#A9A9A9", dot.size=1.5,
-                      show.values=T, value.offset=.2, show.p=TRUE)
-
-results
-q1 <- results[1]
-Q <- q1$Q
-
-out.filename <- paste0(out.dir,"00_mixed_mod_CV_relationships_Q.jpg")
-ggsave(Q, file = out.filename, dpi=300, height=4, width=6)
-
-
-q1 <- results[2]
-sj <- q1$SJC_002
-sj
-out.filename <- paste0(out.dir,"00_mixed_mod_CV_relationships_SJCWRP.jpg")
-ggsave(sj, file = out.filename, dpi=300, height=4, width=6)
-
-q1 <- results[3]
-rep <- q1$Replacement
-rep
-out.filename <- paste0(out.dir,"00_mixed_mod_CV_relationships_replacement.jpg")
-ggsave(rep, file = out.filename, dpi=300, height=4, width=6)
-
-q1 <- results[4]
-comb <- q1$SJC002_POM001Combined
-comb
-out.filename <- paste0(out.dir,"00_mixed_mod_CV_relationships_combWRP.jpg")
-ggsave(comb, file = out.filename, dpi=300, height=4, width=6)
-
-q1 <- results[5]
-year <- q1$Year
-year
-out.filename <- paste0(out.dir,"00_mixed_mod_CV_relationships_year.jpg")
-ggsave(year, file = out.filename, dpi=300, height=4, width=6)
-
-q1 <- results[6]
-group <- q1$Group
-group
-out.filename <- paste0(out.dir,"00_mixed_mod_CV_relationships_group.jpg")
-ggsave(group, file = out.filename, dpi=300, height=4, width=6)
+plot_model(mod1, type="re",
+           vline.color="#A9A9A9", dot.size=1.5,
+           show.values=T, value.offset=.2, show.p=TRUE)
 
