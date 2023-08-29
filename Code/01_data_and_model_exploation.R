@@ -70,9 +70,13 @@ source("/Users/katieirving/Library/CloudStorage/OneDrive-SCCWRP/Documents - Kati
 ## make y data compatible
 rf.data.val <- rf.data %>%
   rename(y = SWP) %>% as.data.frame() %>%
-  mutate(Species = as.factor(Species), Group = as.factor(Group))
+  mutate(Species = as.factor(Species), Group = as.factor(Group), Year = as.factor(Year)) %>% 
+  droplevels()
 
-str(rf.data)
+# str(rf.data.val)
+# str(rf.data)
+# levels(rf.data.val$Year)
+# unique(rf.data.val$Year)
 
 # sum(is.na(rf.data)) ## 0
 # 
@@ -128,7 +132,8 @@ names(rf.data)
 
 rf.data.red <- rf.data %>%
   select(-LifeForm, -Month, -DischargeSJC002_POM001_WN001Combined, -SJC002_POM001Combined) %>%
-  mutate(Species = as.factor(Species), Group = as.factor(Group))
+  mutate(Species = as.factor(Species), Group = as.factor(Group), Year = as.factor(Year)) %>% 
+  droplevels()
 
 rf.data.val <- rf.data.red %>%
   rename(y = SWP) %>% as.data.frame()
@@ -207,7 +212,8 @@ names(rf.data)
 
 rf.data.red <- rf.data %>%
   select(-LifeForm, -Month, -SJC002_POM001Combined, -WN002, -WN001, -POM001, -RainFallMod, -TempMeanModF) %>%
-  mutate(Species = as.factor(Species), Group = as.factor(Group))
+  mutate(Species = as.factor(Species), Group = as.factor(Group), Year = as.factor(Year)) %>% 
+  droplevels()
 
 rf.data.val <- rf.data.red %>%
   rename(y = SWP) %>% as.data.frame()
@@ -229,7 +235,7 @@ names(training)
 # trcontrol = trainControl(method='cv', number=10, savePredictions = T,
 #                          classProbs = F,summaryFunction = twoClassSummary,returnResamp="all")
 
-rf <- randomForest(y~., data=rf.data.val, importance = T, ntree = 1000)
+rf <- randomForest(y~., data=training, importance = T, ntree = 1000)
 mean(rf$rsq) ## 0.65
 rf
 varImpPlot(rf)
@@ -251,21 +257,34 @@ dev.off()
 # partialPlot(iris.rf, iris, Petal.Width, "versicolor")
 str(rf.data.val)
 
+jpeg(paste0( "Figures/02_SWP_Season.jpg"))
 partialPlot(rf, rf.data.val, Season)
-partialPlot(rf, rf.data.val, Year)
+dev.off()
+
+jpeg(paste0( "Figures/02_SWP_Q.jpg"))
 partialPlot(rf, rf.data.val, Q)
+dev.off()
+jpeg(paste0( "Figures/02_SWP_Species.jpg"))
+partialPlot(rf, rf.data.val, Species)
+dev.off()
+jpeg(paste0( "Figures/02_SWP_SJC.jpg"))
+partialPlot(rf, rf.data.val, SJC_002)
+dev.off()
+jpeg(paste0( "Figures/02_SWP_Replacement.jpg"))
+partialPlot(rf, rf.data.val, Replacement)
+dev.off()
+jpeg(paste0( "Figures/02_SWP_Group.jpg"))
+partialPlot(rf, rf.data.val, Group)
+dev.off()
+
 # partialPlot(rf, rf.data.val, LACDPWG44B)
 # partialPlot(rf, rf.data.val, POM001)
 # partialPlot(rf, rf.data.val, RainFallMod)
-partialPlot(rf, rf.data.val, SJC_002)
+
 # partialPlot(rf, rf.data.val, TempMeanModF)
 # partialPlot(rf, rf.data.val, USGSGauge11087020)
 # partialPlot(rf, rf.data.val, WN002)
-partialPlot(rf, rf.data.val, Replacement)
 # partialPlot(rf, rf.data.val, WN001)
-
-partialPlot(rf, rf.data.val, Species)
-partialPlot(rf, rf.data.val, Group)
 
 imp <- importance(rf, type = 1)
 impvar <- rownames(imp)[order(imp[, 1], decreasing=TRUE)]
@@ -394,8 +413,9 @@ rf.data <- bioMeanQ_longx %>%
   filter(Source %in% c("USGSGauge11087020(MGD)", "LACDPWG44B(MGD)", "LACDPWF313B(MGD)")) %>%
   drop_na(SWP) %>%
   select(-Source) %>%
-  mutate(Year = as.integer(Year),
-          Group = as.character(Group))
+  mutate(Year = as.factor(Year),
+          Group = as.factor(Group)) %>% 
+  droplevels() 
 
 head(rf.data)
 names(rf.data)
@@ -415,7 +435,7 @@ summary(mod1)
 anova(mod1)
 check_singularity(mod1) ## False
 icc(mod1, by_group = TRUE)
-r2_nakagawa(mod1) ## 0.6
+r2_nakagawa(mod1) ## 0.63
 
 set_theme(base = theme_classic(), #To remove the background color and the grids
           theme.font = 'serif',   #To change the font type
