@@ -4,7 +4,7 @@ library(tidyverse)
 library(tidylog)
 library(lubridate)
 
-install.packages("ggh4x")
+# install.packages("ggh4x")
 library(ggh4x)
 getwd()
 ## output file for figures
@@ -489,3 +489,44 @@ b2
 
 out.filename <- paste0(out.dir,"00_CV_Q.jpg")
 ggsave(b2, file = out.filename, dpi=300, height=4, width=6)
+
+
+# Add distance ------------------------------------------------------------
+
+
+load(file = "output_data/00_bio_Q_matched_groups.RData")
+head(bioMeanQ_longx)
+
+
+distance <- read.csv("input_data/dist_matrix_New.csv") %>%
+  select(X, SJC.002) %>% rename(PlantID = X) %>%
+  mutate(PlantID2 = gsub(" ", "-", PlantID)) %>%
+  select(-PlantID) %>%
+  rename(DistToSJC002 = SJC.002)
+head(distance)
+
+sum(unique(bioMeanQ_longx$PlantID) %in% unique(distance$PlantID2))
+
+bioMeanQ_long_dist <- full_join(bioMeanQ_longx, distance, by = c("PlantID" = "PlantID2"))
+
+save(bioMeanQ_long_dist, file = "output_data/00_bio_Q_matched_groups_distance.RData")
+
+load(file = "output_data/00_bio_Q_matched_groups_distance.RData")
+names(bioMeanQ_long_dist)
+
+datax <- bioMeanQ_long_dist %>%
+  drop_na(DistToSJC002, SWP)
+
+d1 <- ggplot(datax, aes(y=SWP, x=DistToSJC002, group = Group, col = Group)) +
+  geom_point(aes(group = Group, col = Group))
+d1
+
+out.filename <- paste0(out.dir,"00_SWP_distance.jpg")
+ggsave(d1, file = out.filename, dpi=300, height=4, width=6)
+
+d2 <- ggplot(datax, aes(y=CV, x=DistToSJC002, group = Group, col = Group)) +
+  geom_point(aes(group = Group, col = Group))
+d2
+
+out.filename <- paste0(out.dir,"00_CV_distance.jpg")
+ggsave(d2, file = out.filename, dpi=300, height=4, width=6)

@@ -4,7 +4,7 @@ library(tidyverse)
 library(tidylog)
 library(lubridate)
 # install.packages("MixRF")
-# library(MixRF)
+library(rfUtilities)
 library(randomForest)
 
 # library(kernlab)
@@ -28,9 +28,9 @@ out.dir <- "/Users/katieirving/Library/CloudStorage/OneDrive-SCCWRP/Documents - 
 
 # upload data -------------------------------------------------------------
 
-load(file = "output_data/00_bio_Q_matched_groups.RData")
-head(bioMeanQ_longx)
-names(bioMeanQ_longx)
+load(file = "output_data/00_bio_Q_matched_groups_distance.RData")
+head(bioMeanQ_long_dist)
+names(bioMeanQ_long_dist)
 
 
 # SWP model without substrate---------------------------------------------------------------
@@ -38,23 +38,39 @@ names(bioMeanQ_longx)
 ## substrate has NAs, try model without substrate, then with substrate but removing the NAs
 ## rearrange for ease into RF - remove observed rainfall
 
-rf.data <- bioMeanQ_longx %>%
-  dplyr::select(SWP, Species:LifeForm, Month, Year, Season, 
+rf.data <- bioMeanQ_long_dist %>%
+  dplyr::select(SWP, Species:LifeForm, Month, Year, Season, POS, Substrate,
                 "DischargeSJC002&POM001Combined(MGD)":"RainFallMod",
-                  "POM-001", "TempMeanModF",
-                "SJC-002(MGD)":"Q") %>%
+                "POM-001", "TempMeanModF",
+                "SJC-002(MGD)":"Q", DistToSJC002) %>%
   rename(SJC002_POM001Combined = "DischargeSJC002&POM001Combined(MGD)",
          DischargeSJC002_POM001_WN001Combined = "DischargeSJC002,POM001,&WN001Combined(MGD)",
          SJC_002 = "SJC-002(MGD)",
          POM001 = "POM-001",
          WN001 = "WN-001", 
          WN002 = "WN-002(Zone1Ditch)") %>%
-    filter(Source %in% c("USGSGauge11087020(MGD)", "LACDPWG44B(MGD)", "LACDPWF313B(MGD)")) %>%
+  mutate(POS = as.factor(POS),
+         Species = as.factor(Species),
+         Group = as.factor(Group),
+         LifeForm = as.factor(LifeForm),
+         Month = as.factor(Month),
+         Substrate = as.factor(Substrate)) %>%
+  # mutate(POS = recode_factor(POS, blanks = NA)) %>%
+  filter(Source %in% c("USGSGauge11087020(MGD)", "LACDPWG44B(MGD)", "LACDPWF313B(MGD)")) %>%
   drop_na(SWP) %>%
   select(-Source)
 
-  unique(rf.data$Source)
-  rf.data
+str(rf.data)
+## change blank values in POS
+rf.data["POS"][rf.data["POS"]==''] <- NA
+
+sum(is.na(rf.data$POS))
+dim(rf.data)
+
+## impute missing values
+rf.data.imputed <- rfImpute(SWP ~ ., rf.data)
+head(rf.data.imputed)
+
 # Random Forest Model -----------------------------------------------------
 
 set.seed(234) ## reproducibility
@@ -68,7 +84,7 @@ sp=0.6 ## for dependence plots
 source("/Users/katieirving/Library/CloudStorage/OneDrive-SCCWRP/Documents - Katie’s MacBook Pro/git/RB9_Vulnerability_Arroyo_Toad/original_model/Current/randomForests/PARTITIONING/DATA3/Functions.R")
 
 ## make y data compatible
-rf.data.val <- rf.data %>%
+rf.data.val <- rf.data.imputed %>%
   rename(y = SWP) %>% as.data.frame() %>%
   mutate(Species = as.factor(Species), Group = as.factor(Group), Year = as.factor(Year)) %>% 
   droplevels()
@@ -82,28 +98,19 @@ rf.data.val <- rf.data %>%
 # 
 # ind <- which(is.na(rf.data$Substrate))
 # rf.data[ind,]
-
-## split into training and testing
-
-setsize <- floor(nrow(rf.data)*0.8)
-index <- sample(1:nrow(rf.data), size = setsize)
-training <- rf.data.val[index,]
-testing <- rf.data.val[-index,]
-
-names(training)
 # 
 # trcontrol = trainControl(method='cv', number=10, savePredictions = T,
 #                          classProbs = F,summaryFunction = twoClassSummary,returnResamp="all")
 
-rf <- randomForest(y~., data=training, importance = T)
-mean(rf$rsq) ## 0.6
+rf <- randomForest(y~., data=rf.data.val, importance = T)
+mean(rf$rsq) ## 0.89
 varImpPlot(rf)
 importance(rf, type = 1)
 
 # PLOT VARIABLE IMPORTANCE
 pdf(paste0( "Figures/01_var_imp_full_model_SWP.pdf"), width=12, height=8)
 
-varImpPlot(rf)
+varImpPlot(rf, type = 1)
 
 dev.off()
 
@@ -205,13 +212,17 @@ par(op)
 
 
 # Remove negative importance variables ------------------------------------
-impvar 
+imp <- importance(rf, type = 1)
+imp <- as.data.frame(imp)
 imp
+vars <- ifelse(imp$`%IncMSE` > 0, rownames(imp), NA)
+vars <- vars[!is.na(vars)]
+vars
 names(rf.data)
 ## WN001, WN002, POM001, RainFallMod, TempMeanModF, 
 
-rf.data.red <- rf.data %>%
-  select(-LifeForm, -Month, -SJC002_POM001Combined, -WN002, -WN001, -POM001, -RainFallMod, -TempMeanModF) %>%
+rf.data.red <- rf.data.imputed %>%
+  select(SWP, all_of(vars), -LifeForm, -WN001) %>%
   mutate(Species = as.factor(Species), Group = as.factor(Group), Year = as.factor(Year)) %>% 
   droplevels()
 
@@ -235,8 +246,8 @@ names(training)
 # trcontrol = trainControl(method='cv', number=10, savePredictions = T,
 #                          classProbs = F,summaryFunction = twoClassSummary,returnResamp="all")
 
-rf <- randomForest(y~., data=training, importance = T, ntree = 1000)
-mean(rf$rsq) ## 0.65
+rf <- randomForest(y~., data=rf.data.val, importance = T, ntree = 1000)
+mean(rf$rsq) ## 0.89
 rf
 varImpPlot(rf)
 importance(rf, type = 1)
@@ -244,7 +255,7 @@ importance(rf, type = 1)
 # PLOT VARIABLE IMPORTANCE
 pdf(paste0( "Figures/var_imp_reduced_model_SWP_2.pdf"), width=12, height=8)
 
-varImpPlot(rf)
+varImpPlot(rf, type = 1, main = "")
 
 dev.off()
 
@@ -259,6 +270,10 @@ str(rf.data.val)
 
 jpeg(paste0( "Figures/02_SWP_Season.jpg"))
 partialPlot(rf, rf.data.val, Season)
+dev.off()
+
+jpeg(paste0( "Figures/02_SWP_Distance.jpg"))
+partialPlot(rf, rf.data.val, DistToSJC002)
 dev.off()
 
 jpeg(paste0( "Figures/02_SWP_Q.jpg"))
@@ -276,6 +291,16 @@ dev.off()
 jpeg(paste0( "Figures/02_SWP_Group.jpg"))
 partialPlot(rf, rf.data.val, Group)
 dev.off()
+
+jpeg(paste0( "Figures/02_SWP_POS.jpg"))
+partialPlot(rf, rf.data.val, POS)
+dev.off()
+
+jpeg(paste0( "Figures/02_SWP_Substrate.jpg"))
+partialPlot(rf, rf.data.val, Substrate)
+dev.off()
+
+
 
 # partialPlot(rf, rf.data.val, LACDPWG44B)
 # partialPlot(rf, rf.data.val, POM001)
@@ -379,6 +404,30 @@ par(op)
 
 # Cross validation --------------------------------------------------------
 
+## split into training and testing
+
+setsize <- floor(nrow(rf.data.red)*0.8)
+index <- sample(1:nrow(rf.data.red), size = setsize)
+training <- rf.data.val[index,]
+testing <- rf.data.val[-index,]
+
+names(rf.data.val)
+
+(rf.cv <- rf.crossValidation(rf, rf.data.val[, 2:13], 
+                              p=0.10, n=99, ntree=501) )
+
+# Fit MSE = 0.9600181 
+# Fit percent variance explained = 90.83 
+# Median permuted MSE = 1.044597 
+# Median permuted percent variance explained = 90.02 
+# Median cross-validation RMSE = 1.024516 
+# Median cross-validation MBE = 0.006099859 
+# Median cross-validation MAE = 0.7059243 
+# Range of ks p-values = 1.734645e-08 0.0008054739 
+# Range of ks D statistic = 0.06407563 0.0987395 
+# RMSE cross-validation error variance = 0.002315508 
+# MBE cross-validation error variance = 0.001088179 
+# MAE cross-validation error variance = 0.0005298076
 
 # Mixed effects model -----------------------------------------------------
 library(sjPlot) #for plotting lmer and glmer mods
@@ -395,47 +444,48 @@ library(lme4)
 library(glmmTMB)
 
 ## data
-load(file = "output_data/00_bio_Q_matched_groups.RData")
-head(bioMeanQ_longx)
-names(bioMeanQ_longx)
-
-rf.data <- bioMeanQ_longx %>%
-  dplyr::select(SWP, Species:LifeForm, Month, Year, Season, 
-                "DischargeSJC002&POM001Combined(MGD)":"RainFallMod",
-                "POM-001", "TempMeanModF",
-                "SJC-002(MGD)":"Q") %>%
-  rename(SJC002_POM001Combined = "DischargeSJC002&POM001Combined(MGD)",
-         DischargeSJC002_POM001_WN001Combined = "DischargeSJC002,POM001,&WN001Combined(MGD)",
-         SJC_002 = "SJC-002(MGD)",
-         POM001 = "POM-001",
-         WN001 = "WN-001", 
-         WN002 = "WN-002(Zone1Ditch)") %>%
-  filter(Source %in% c("USGSGauge11087020(MGD)", "LACDPWG44B(MGD)", "LACDPWF313B(MGD)")) %>%
-  drop_na(SWP) %>%
-  select(-Source) %>%
-  mutate(Year = as.factor(Year),
-          Group = as.factor(Group)) %>% 
-  droplevels() 
-
-head(rf.data)
-names(rf.data)
+# load(file = "output_data/00_bio_Q_matched_groups_distance.RData")
+# head(bioMeanQ_long_dist)
+# names(bioMeanQ_longx)
+# 
+# rf.data <- bioMeanQ_long_dist %>%
+#   dplyr::select(SWP, Species:LifeForm, Month, Year, Season, 
+#                 "DischargeSJC002&POM001Combined(MGD)":"RainFallMod",
+#                 "POM-001", "TempMeanModF",
+#                 "SJC-002(MGD)":"Q", DistToSJC002) %>%
+#   rename(SJC002_POM001Combined = "DischargeSJC002&POM001Combined(MGD)",
+#          DischargeSJC002_POM001_WN001Combined = "DischargeSJC002,POM001,&WN001Combined(MGD)",
+#          SJC_002 = "SJC-002(MGD)",
+#          POM001 = "POM-001",
+#          WN001 = "WN-001", 
+#          WN002 = "WN-002(Zone1Ditch)") %>%
+#   filter(Source %in% c("USGSGauge11087020(MGD)", "LACDPWG44B(MGD)", "LACDPWF313B(MGD)")) %>%
+#   drop_na(SWP, DistToSJC002) %>%
+#   select(-Source) %>%
+#   mutate(Year = as.factor(Year),
+#           Group = as.factor(Group)) %>% 
+#   droplevels() 
+# 
+# head(rf.data)
+# names(rf.data)
 
 ## variables from RF model to include
 
 ## fixed effects - Q, SJC_002, replacement,  DischargeSJC002_POM001_WN001Combined
 
-mod1 <- lmer(formula = SWP ~ Q + SJC_002 + Replacement + DischargeSJC002_POM001_WN001Combined + Year + Group +
+mod1 <- lmer(formula = SWP ~ Q + SJC_002 + Replacement + Year + Group + DistToSJC002+ Substrate+ POS+ 
                # (1|Year) + ## remove due to low ICC
                # (1|Group) + ## remove due to low ICC
                (1|Species) +
                (1|Season),
-             data    = rf.data) 
+             data    = rf.data.imputed) 
 
 summary(mod1)
 anova(mod1)
 check_singularity(mod1) ## False
 icc(mod1, by_group = TRUE)
-r2_nakagawa(mod1) ## 0.63
+icc(mod1)
+r2_nakagawa(mod1) ## 0.65
 
 set_theme(base = theme_classic(), #To remove the background color and the grids
           theme.font = 'serif',   #To change the font type
@@ -481,7 +531,7 @@ results <- plot_model(mod1, type="pred",
 results
 q1 <- results[1]
 Q <- q1$Q
-
+Q
 out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_Q.jpg")
 ggsave(Q, file = out.filename, dpi=300, height=4, width=6)
 
@@ -498,21 +548,39 @@ rep
 out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_replacement.jpg")
 ggsave(rep, file = out.filename, dpi=300, height=4, width=6)
 
-q1 <- results[4]
-comb <- q1$DischargeSJC002_POM001_WN001Combined
-comb
-out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_combWRP.jpg")
-ggsave(comb, file = out.filename, dpi=300, height=4, width=6)
+# q1 <- results[4]
+# comb <- q1$DischargeSJC002_POM001_WN001Combined
+# comb
+# out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_combWRP.jpg")
+# ggsave(comb, file = out.filename, dpi=300, height=4, width=6)
 
-q1 <- results[5]
+q1 <- results[4]
 year <- q1$Year
 year
 out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_year.jpg")
 ggsave(year, file = out.filename, dpi=300, height=4, width=6)
 
-q1 <- results[6]
+q1 <- results[5]
 group <- q1$Group
 group
 out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_group.jpg")
 ggsave(group, file = out.filename, dpi=300, height=4, width=6)
+
+q1 <- results[6]
+dist <- q1$DistToSJC002
+dist
+out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_distance.jpg")
+ggsave(dist, file = out.filename, dpi=300, height=4, width=6)
+
+q1 <- results[7]
+sub <- q1$Substrate
+sub
+out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_substrate.jpg")
+ggsave(sub, file = out.filename, dpi=300, height=4, width=10)
+
+q1 <- results[8]
+pos <- q1$POS
+pos
+out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_POS.jpg")
+ggsave(pos, file = out.filename, dpi=300, height=4, width=6)
 

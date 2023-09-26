@@ -3,8 +3,8 @@
 library(tidyverse)
 library(tidylog)
 library(lubridate)
-# install.packages("MixRF")
-# library(MixRF)
+# install.packages("rfUtilities")
+library(rfUtilities)
 library(randomForest)
 
 # library(kernlab)
@@ -27,9 +27,9 @@ out.dir <- "/Users/katieirving/Library/CloudStorage/OneDrive-SCCWRP/Documents - 
 
 # upload data -------------------------------------------------------------
 
-load(file = "output_data/00_bio_Q_matched_groups.RData")
-head(bioMeanQ_longx)
-names(bioMeanQ_longx)
+load(file = "output_data/00_bio_Q_matched_groups_distance.RData")
+head(bioMeanQ_long_dist)
+names(bioMeanQ_long_dist)
 
 
 # CV model without substrate---------------------------------------------------------------
@@ -37,22 +37,39 @@ names(bioMeanQ_longx)
 ## substrate has NAs, try model without substrate, then with substrate but removing the NAs
 ## rearrange for ease into RF - remove observed rainfall
 
-rf.data <- bioMeanQ_longx %>%
-  dplyr::select(CV, Species:LifeForm, Month, Year, Season, 
+rf.data <- bioMeanQ_long_dist %>%
+  dplyr::select(CV, Species:LifeForm, Month, Year, Season, POS, Substrate,
                 "DischargeSJC002&POM001Combined(MGD)":"RainFallMod",
                 "POM-001", "TempMeanModF",
-                "SJC-002(MGD)":"Q") %>%
+                "SJC-002(MGD)":"Q", DistToSJC002) %>%
   rename(SJC002_POM001Combined = "DischargeSJC002&POM001Combined(MGD)",
          DischargeSJC002_POM001_WN001Combined = "DischargeSJC002,POM001,&WN001Combined(MGD)",
          SJC_002 = "SJC-002(MGD)",
          POM001 = "POM-001",
          WN001 = "WN-001", 
          WN002 = "WN-002(Zone1Ditch)") %>%
+  mutate(POS = as.factor(POS),
+         Species = as.factor(Species),
+         Group = as.factor(Group),
+         LifeForm = as.factor(LifeForm),
+         Month = as.factor(Month),
+         Substrate = as.factor(Substrate)) %>%
+  # mutate(POS = recode_factor(POS, blanks = NA)) %>%
   filter(Source %in% c("USGSGauge11087020(MGD)", "LACDPWG44B(MGD)", "LACDPWF313B(MGD)")) %>%
   drop_na(CV) %>%
   select(-Source)
 
-rf.data
+str(rf.data)
+## change blank values in POS
+rf.data["POS"][rf.data["POS"]==''] <- NA
+
+sum(is.na(rf.data$POS))
+dim(rf.data)
+
+## impute missing values
+rf.data.imputed <- rfImpute(CV ~ ., rf.data)
+rf.data.imputed
+
 # Random Forest Model -----------------------------------------------------
 
 set.seed(234) ## reproducibility
@@ -66,7 +83,7 @@ sp=0.6 ## for dependence plots
 source("/Users/katieirving/Library/CloudStorage/OneDrive-SCCWRP/Documents - Katie’s MacBook Pro/git/RB9_Vulnerability_Arroyo_Toad/original_model/Current/randomForests/PARTITIONING/DATA3/Functions.R")
 
 ## make y data compatible
-rf.data.val <- rf.data %>%
+rf.data.val <- rf.data.imputed %>%
   rename(y = CV) %>% as.data.frame() %>%
   mutate(Species = as.factor(Species), Group = as.factor(Group), Year = as.factor(Year)) %>% 
   droplevels()
@@ -90,11 +107,12 @@ names(training)
 # trcontrol = trainControl(method='cv', number=10, savePredictions = T,
 #                          classProbs = F,summaryFunction = twoClassSummary,returnResamp="all")
 
-rf <- randomForest(y~., data=training, importance = T)
-mean(rf$rsq) ## 0.2
+rf <- randomForest(y~., data=rf.data.val, importance = T)
+mean(rf$rsq) ## 0.74
 varImpPlot(rf)
 imp <- importance(rf, type = 1)
 rf
+imp
 # PLOT VARIABLE IMPORTANCE
 pdf(paste0( "Figures/01_var_imp_full_model_CV.pdf"), width=12, height=8)
 
@@ -201,14 +219,14 @@ par(op)
 # Remove negative importance variables ------------------------------------
 impvar 
 imp <- as.data.frame(imp)
-
+imp
 vars <- ifelse(imp$`%IncMSE` > 0, rownames(imp), NA)
 vars <- vars[!is.na(vars)]
 vars
 names(rf.data)
 ## WN001, WN002, POM001, RainFallMod, TempMeanModF, 
 
-rf.data.red <- rf.data %>%
+rf.data.red <- rf.data.imputed %>%
   select(CV, all_of(vars), -LifeForm) %>%
   mutate(Species = as.factor(Species), Group = as.factor(Group), Year = as.factor(Year)) %>% 
   droplevels()
@@ -221,28 +239,24 @@ str(rf.data.red)
 # ind <- which(is.na(rf.data$Substrate))
 # rf.data[ind,]
 
-## split into training and testing
-
-setsize <- floor(nrow(rf.data.red)*0.8)
-index <- sample(1:nrow(rf.data.red), size = setsize)
-training <- rf.data.val[index,]
-testing <- rf.data.val[-index,]
-
-names(training)
 # 
 # trcontrol = trainControl(method='cv', number=10, savePredictions = T,
 #                          classProbs = F,summaryFunction = twoClassSummary,returnResamp="all")
 
-rf <- randomForest(y~., data=training, importance = T, ntree = 1000)
-mean(rf$rsq) ## 0.32
+rf <- randomForest(y~., data=rf.data.val, importance = T, ntree = 1000)
+mean(rf$rsq) ## 0.84
+mean(rf$mse)
+
 rf
-varImpPlot(rf)
+dev.off()
+varImpPlot(rf, type = 1)
+
 importance(rf, type = 1)
 
 # PLOT VARIABLE IMPORTANCE
 pdf(paste0( "Figures/var_imp_reduced_model_CV.pdf"), width=12, height=8)
 
-varImpPlot(rf)
+varImpPlot(rf, type = 1, main = "")
 
 dev.off()
 
@@ -273,6 +287,17 @@ partialPlot(rf, rf.data.val, Replacement)
 dev.off()
 jpeg(paste0( "Figures/02_CV_Group.jpg"))
 partialPlot(rf, rf.data.val, Group)
+dev.off()
+jpeg(paste0( "Figures/02_CV_Distance.jpg"))
+partialPlot(rf, rf.data.val, DistToSJC002)
+dev.off()
+
+jpeg(paste0( "Figures/02_CV_POS.jpg"))
+partialPlot(rf, rf.data.val, POS)
+dev.off()
+
+jpeg(paste0( "Figures/02_CV_Substrate.jpg"))
+partialPlot(rf, rf.data.val, Substrate)
 dev.off()
 
 # partialPlot(rf, rf.data.val, LACDPWG44B)
@@ -377,6 +402,30 @@ par(op)
 
 # Cross validation --------------------------------------------------------
 
+## split into training and testing
+
+setsize <- floor(nrow(rf.data.red)*0.8)
+index <- sample(1:nrow(rf.data.red), size = setsize)
+training <- rf.data.val[index,]
+testing <- rf.data.val[-index,]
+
+names(rf.data.val)
+
+( rf.cv <- rf.crossValidation(rf, rf.data.val[, 2:13], 
+                              p=0.10, n=99, ntree=501) )
+7.478742*7.478742
+# Fit MSE = 52.12365 
+# Fit percent variance explained = 84.14 
+# Median permuted MSE = 57.31814 
+# Median permuted percent variance explained = 82.52 
+# Median cross-validation RMSE = 7.478742 
+# Median cross-validation MBE = -0.04562313 
+# Median cross-validation MAE = 4.90859 
+# Range of ks p-values = 0 0 
+# Range of ks D statistic = 0.2125654 0.2712042 
+# RMSE cross-validation error variance = 0.1548533 
+# MBE cross-validation error variance = 0.0731407 
+# MAE cross-validation error variance = 0.0395445 
 
 # Mixed effects model -----------------------------------------------------
 library(sjPlot) #for plotting lmer and glmer mods
@@ -393,15 +442,12 @@ library(lme4)
 library(glmmTMB)
 
 ## data
-load(file = "output_data/00_bio_Q_matched_groups.RData")
-head(bioMeanQ_longx)
-names(bioMeanQ_longx)
 
-rf.data <- bioMeanQ_longx %>%
+rf.data <- bioMeanQ_long_dist %>%
   dplyr::select(CV, Species:LifeForm, Month, Year, Season, 
                 "DischargeSJC002&POM001Combined(MGD)":"RainFallMod",
                 "POM-001", "TempMeanModF",
-                "SJC-002(MGD)":"Q") %>%
+                "SJC-002(MGD)":"Q", DistToSJC002) %>%
   rename(SJC002_POM001Combined = "DischargeSJC002&POM001Combined(MGD)",
          DischargeSJC002_POM001_WN001Combined = "DischargeSJC002,POM001,&WN001Combined(MGD)",
          SJC_002 = "SJC-002(MGD)",
@@ -416,23 +462,27 @@ rf.data <- bioMeanQ_longx %>%
   droplevels() 
 
 head(rf.data)
-names(rf.data)
+names(rf.data.val)
 
 ## variables from RF model to include
 
 ## fixed effects - Q, SJC_002, replacement,  DischargeSJC002_POM001_WN001Combined
+corrf <- rf.data.val[,c(8:10,12)]
+cor(corrf)
 
-mod1 <- lmer(formula = CV ~ Q + SJC_002 + Replacement + SJC002_POM001Combined + Year + Group +
+
+mod1 <- lmer(formula = y ~ Q + SJC_002 + Replacement + Year + Group + DistToSJC002+ Substrate+ POS+ Season+
                # (1|Year) + ## remove due to low ICC
-               # (1|Group) + ## remove due to low ICC
-               (1|Species) +
-               (1|Season),
-             data    = rf.data) 
+               # (1|POS) + ## remove due to low ICC
+               (1|Species),
+               # (1|Season),
+             data    = rf.data.val) 
 
 summary(mod1)
 anova(mod1)
 check_singularity(mod1) ## False
 icc(mod1, by_group = TRUE)
+icc(mod1)
 r2_nakagawa(mod1) ## 0.27
 
 set_theme(base = theme_classic(), #To remove the background color and the grids
@@ -464,12 +514,18 @@ r1
 out.filename <- paste0(out.dir,"00_mixed_mod_CV_random_effects_species.jpg")
 ggsave(r1, file = out.filename, dpi=300, height=4, width=6)
 
-r2 <- random[[2]]
-
-r2
-
-out.filename <- paste0(out.dir,"00_mixed_mod_CV_random_effects_season.jpg")
-ggsave(r2, file = out.filename, dpi=300, height=4, width=6)
+# r1 <- random[[2]]
+# 
+# r1
+# 
+# 
+# 
+# r2 <- random[[3]]
+# 
+# r2
+# 
+# out.filename <- paste0(out.dir,"00_mixed_mod_CV_random_effects_season.jpg")
+# ggsave(r2, file = out.filename, dpi=300, height=4, width=6)
 
 ### plot realtionships
 results <- plot_model(mod1, type="pred",
@@ -478,6 +534,7 @@ results <- plot_model(mod1, type="pred",
 
 results
 q1 <- results[1]
+q1
 Q <- q1$Q
 
 out.filename <- paste0(out.dir,"00_mixed_mod_CV_relationships_Q.jpg")
@@ -496,21 +553,47 @@ rep
 out.filename <- paste0(out.dir,"00_mixed_mod_CV_relationships_replacement.jpg")
 ggsave(rep, file = out.filename, dpi=300, height=4, width=6)
 
-q1 <- results[4]
-comb <- q1$SJC002_POM001Combined
-comb
-out.filename <- paste0(out.dir,"00_mixed_mod_CV_relationships_combWRP.jpg")
-ggsave(comb, file = out.filename, dpi=300, height=4, width=6)
+# q1 <- results[4]
+# q1
+# comb <- q1$SJC002_POM001Combined
+# comb
+# out.filename <- paste0(out.dir,"00_mixed_mod_CV_relationships_combWRP.jpg")
+# ggsave(comb, file = out.filename, dpi=300, height=4, width=6)
 
-q1 <- results[5]
+q1 <- results[4]
 year <- q1$Year
 year
 out.filename <- paste0(out.dir,"00_mixed_mod_CV_relationships_year.jpg")
 ggsave(year, file = out.filename, dpi=300, height=4, width=6)
-
-q1 <- results[6]
+q1
+q1 <- results[5]
 group <- q1$Group
 group
 out.filename <- paste0(out.dir,"00_mixed_mod_CV_relationships_group.jpg")
 ggsave(group, file = out.filename, dpi=300, height=4, width=6)
+
+q1 <- results[6]
+distance <- q1$DistToSJC002
+distance
+out.filename <- paste0(out.dir,"00_mixed_mod_CV_relationships_distance.jpg")
+ggsave(distance, file = out.filename, dpi=300, height=4, width=6)
+
+
+q1 <- results[7]
+subst <- q1$Substrate
+subst
+out.filename <- paste0(out.dir,"00_mixed_mod_CV_relationships_substrate.jpg")
+ggsave(subst, file = out.filename, dpi=300, height=4, width=6)
+
+q1 <- results[8]
+pos <- q1$POS
+pos
+out.filename <- paste0(out.dir,"00_mixed_mod_CV_relationships_POS.jpg")
+ggsave(pos, file = out.filename, dpi=300, height=4, width=6)
+
+q1 <- results[9]
+seas <- q1$Season
+seas
+out.filename <- paste0(out.dir,"00_mixed_mod_CV_relationships_Season.jpg")
+ggsave(seas, file = out.filename, dpi=300, height=4, width=6)
 

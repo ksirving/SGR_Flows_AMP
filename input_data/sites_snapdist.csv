@@ -1,0 +1,12 @@
+seg,vert,snapdist,OBJECTID,PointID,PointType,Label,Long,Lat
+8,395,30.904,1,USGS 11087020,Stream Gauge Station,11087020,404168.2075,3766338.485
+1,658,0.103,2,LACDPW F313B,Stream Gauge Station,F313B,401746.7752,3765693.974
+6,9,133.516,3,LACDPW G44B,Stream Gauge Station,G44B,402522.4457,3765028.654
+5,18,128.905,4,Rincon Ditch Company Well 4,Monitoring Well Location,Well 4,403282.2691,3764744.494
+8,325,230.020,5,San Gabriel Valley Water Company Well B2,Monitoring Well Location,Well B2,404447.1477,3766258.365
+7,1,67.408,6,City of Whittier Well 18,Monitoring Well Location,Well 18,402579.0121,3765571.467
+1,268,21.306,7,City of Whittier Well 15,Monitoring Well Location,Well 15,402648.9969,3765786.109
+4,3657,5.018,8,SJC-001,Effluent Discharge Point,SJC-001,397610.8059,3754894.226
+12,8282,13.135,9,SJC-002,Effluent Discharge Point,SJC-002,405723.3081,3766583.448
+7,115,0.355,10,WN001,Effluent Discharge Point,WN001,402598.116,3765185.237
+12,1,96.784,11,POM001,Effluent Discharge Point,POM001,426538.9333,3768561.695
