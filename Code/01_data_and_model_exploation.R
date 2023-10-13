@@ -55,14 +55,18 @@ rf.data <- bioMeanQ_long_dist %>%
          LifeForm = as.factor(LifeForm),
          Month = as.factor(Month),
          Substrate = as.factor(Substrate)) %>%
+  # mutate(POS = ifelse(Year == 2018, NA, POS)) %>%
   # mutate(POS = recode_factor(POS, blanks = NA)) %>%
   filter(Source %in% c("USGSGauge11087020(MGD)", "LACDPWG44B(MGD)", "LACDPWF313B(MGD)")) %>%
   drop_na(SWP) %>%
   select(-Source)
 
 str(rf.data)
+
 ## change blank values in POS
 rf.data["POS"][rf.data["POS"]==''] <- NA
+
+rf.data["POS"][rf.data["Year"]=='2018'] <- NA
 
 sum(is.na(rf.data$POS))
 dim(rf.data)
@@ -103,7 +107,7 @@ rf.data.val <- rf.data.imputed %>%
 #                          classProbs = F,summaryFunction = twoClassSummary,returnResamp="all")
 
 rf <- randomForest(y~., data=rf.data.val, importance = T)
-mean(rf$rsq) ## 0.89
+mean(rf$rsq) ## 0.85
 varImpPlot(rf)
 importance(rf, type = 1)
 
@@ -122,13 +126,13 @@ dev.off()
 # save(conMat, file=paste0(gridFile, "confusion_matrix.RData"))
 
 
-pdf(paste0(gridFile, "Trees_full_model.pdf"), width=25, height=15)
-
-full_tree <- rpart(y~., method = "class", control = rpart.control(cp = 0, minsplit = 2), data = rf.data.val)
-plot(full_tree)
-text(full_tree)
-
-dev.off()
+# pdf(paste0(gridFile, "Trees_full_model.pdf"), width=25, height=15)
+# 
+# full_tree <- rpart(y~., method = "class", control = rpart.control(cp = 0, minsplit = 2), data = rf.data.val)
+# plot(full_tree)
+# text(full_tree)
+# 
+# dev.off()
 
 
 # Reducing model variables ------------------------------------------------
@@ -236,36 +240,90 @@ str(rf.data.red)
 
 ## split into training and testing
 
-setsize <- floor(nrow(rf.data.red)*0.8)
-index <- sample(1:nrow(rf.data.red), size = setsize)
-training <- rf.data.val[index,]
-testing <- rf.data.val[-index,]
-
-names(training)
+# setsize <- floor(nrow(rf.data.red)*0.8)
+# index <- sample(1:nrow(rf.data.red), size = setsize)
+# training <- rf.data.val[index,]
+# testing <- rf.data.val[-index,]
+# 
+# names(training)
 # 
 # trcontrol = trainControl(method='cv', number=10, savePredictions = T,
 #                          classProbs = F,summaryFunction = twoClassSummary,returnResamp="all")
 
 rf <- randomForest(y~., data=rf.data.val, importance = T, ntree = 1000)
-mean(rf$rsq) ## 0.89
+mean(rf$rsq) ## 0.91
 rf
-varImpPlot(rf)
+
+
+# Variable importance -----------------------------------------------------
+
+library("scales")
+
+range01 <- function(x){(x-min(x))/(max(x)-min(x))}
 importance(rf, type = 1)
+## get mean and scale and % to make relative
+
+VarImp <- as.data.frame(rf$importance) 
+colnames(VarImp)[1] <- "DecreaseAcc"
+VarImp$Variable <- rownames(VarImp)
+
+
+VarImp
+
+ImpMean <- VarImp %>% 
+  # group_by(Variable) %>%
+  # summarise(MeanImp = mean(MeanDecreaseAccuracy)) %>%
+  mutate(MeanImpScaled = rescale(DecreaseAcc)) %>%
+  mutate(MeanImpPerc = (MeanImpScaled/sum(MeanImpScaled))*100)
+
+ImpMean
+
+## humanise variables - check the remote senseing
+ImpMean <- ImpMean %>%
+  mutate(VariableHuman = case_when(Variable == "POS" ~ "Tree Position",
+                                   Variable == "SJC002_POM001Combined" ~ "Discharge: SJC & POM",
+                                   Variable == "DischargeSJC002_POM001_WN001Combined" ~ "Discharge: SJC, POM & WN",
+                                   Variable == "SJC_002" ~ "Discharge: SJC",
+                                   Variable == "Replacement" ~ "Tree Replaced",
+                                   Variable == "DistToSJC002" ~ "Distance to SJC",
+                                   Variable == "Species" ~ "Species",
+                                   Variable == "Group" ~ "Group",
+                                   Variable == "Year" ~ "Year",
+                                   Variable == "Season" ~ "Season",
+                                   Variable == "Substrate" ~ "Substrate",
+                                   Variable == "Q" ~ "Stream Flow",
+                                   Variable == "WN002" ~ "Discharge: WN"
+                                   ))
+
+## order in increasing values
+
+ImpMean$VariableHuman <- factor(ImpMean$VariableHuman, levels=ImpMean[order(ImpMean$MeanImpPerc,decreasing=F),]$VariableHuman)
+ImpMean$VariableHuman
+
+## plot
+i1 <- ggplot(ImpMean, aes(x=MeanImpPerc, y=VariableHuman)) +
+  geom_point() +
+  scale_x_continuous("Relative Importance (%)") +
+  scale_y_discrete("") +
+  theme_bw()
+i1
+
+file.name1 <- "Figures/01_relative_importance_SWP.jpg"
+ggsave(i1, filename=file.name1, dpi=300, height=5, width=8)
+
 
 # PLOT VARIABLE IMPORTANCE
-pdf(paste0( "Figures/var_imp_reduced_model_SWP_2.pdf"), width=12, height=8)
-
-varImpPlot(rf, type = 1, main = "")
-
-dev.off()
-
-## partial plots
+# pdf(paste0( "Figures/var_imp_reduced_model_SWP_2.pdf"), width=12, height=8)
 # 
-# data(iris)
-# head(iris)
-# set.seed(543)
-# iris.rf <- randomForest(Species~., iris)
-# partialPlot(iris.rf, iris, Petal.Width, "versicolor")
+# varImpPlot(rf, type = 1, main = "")
+# 
+# dev.off()
+
+
+# Partial Plots -----------------------------------------------------------
+
+
+
 str(rf.data.val)
 
 jpeg(paste0( "Figures/02_SWP_Season.jpg"))
@@ -311,15 +369,15 @@ dev.off()
 # partialPlot(rf, rf.data.val, WN002)
 # partialPlot(rf, rf.data.val, WN001)
 
-imp <- importance(rf, type = 1)
-impvar <- rownames(imp)[order(imp[, 1], decreasing=TRUE)]
-op <- par(mfrow=c(2, 3))
-
-for (i in seq_along(impvar)) {
-  partialPlot(rf, training, impvar[i], xlab=impvar[i],
-              main=paste("Partial Dependence on", impvar[i]))
-}
-par(op)
+# imp <- importance(rf, type = 1)
+# impvar <- rownames(imp)[order(imp[, 1], decreasing=TRUE)]
+# op <- par(mfrow=c(2, 3))
+# 
+# for (i in seq_along(impvar)) {
+#   partialPlot(rf, training, impvar[i], xlab=impvar[i],
+#               main=paste("Partial Dependence on", impvar[i]))
+# }
+# par(op)
 
 
 # Remove species ----------------------------------------------------------
@@ -417,17 +475,18 @@ names(rf.data.val)
                               p=0.10, n=99, ntree=501) )
 
 # Fit MSE = 0.9600181 
-# Fit percent variance explained = 90.83 
-# Median permuted MSE = 1.044597 
-# Median permuted percent variance explained = 90.02 
-# Median cross-validation RMSE = 1.024516 
-# Median cross-validation MBE = 0.006099859 
-# Median cross-validation MAE = 0.7059243 
-# Range of ks p-values = 1.734645e-08 0.0008054739 
-# Range of ks D statistic = 0.06407563 0.0987395 
-# RMSE cross-validation error variance = 0.002315508 
-# MBE cross-validation error variance = 0.001088179 
-# MAE cross-validation error variance = 0.0005298076
+# Fit MSE = 0.9932792 
+# Fit percent variance explained = 90.58 
+# Median permuted MSE = 1.056655 
+# Median permuted percent variance explained = 89.9 
+# Median cross-validation RMSE = 1.016558 
+# Median cross-validation MBE = -0.003313227 
+# Median cross-validation MAE = 0.7115378 
+# Range of ks p-values = 3.455415e-09 0.0004783882 
+# Range of ks D statistic = 0.06617647 0.1029412 
+# RMSE cross-validation error variance = 0.001933153 
+# MBE cross-validation error variance = 0.0009840741 
+# MAE cross-validation error variance = 0.0006018589 
 
 # Mixed effects model -----------------------------------------------------
 library(sjPlot) #for plotting lmer and glmer mods
@@ -467,13 +526,16 @@ library(glmmTMB)
 #   droplevels() 
 # 
 # head(rf.data)
-# names(rf.data)
+names(rf.data.imputed)
 
+corrf <- rf.data.imputed[,c(10:17, 19, 20)]
+cor(corrf)
 ## variables from RF model to include
 
-## fixed effects - Q, SJC_002, replacement,  DischargeSJC002_POM001_WN001Combined
+## removed  DischargeSJC002_POM001_WN001Combined
+#  
 
-mod1 <- lmer(formula = SWP ~ Q + SJC_002 + Replacement + Year + Group + DistToSJC002+ Substrate+ POS+ 
+mod1 <- lmer(formula = SWP ~  Q + SJC_002 + Replacement + Year + Group + DistToSJC002+ Substrate+ POS+ 
                # (1|Year) + ## remove due to low ICC
                # (1|Group) + ## remove due to low ICC
                (1|Species) +
@@ -485,7 +547,7 @@ anova(mod1)
 check_singularity(mod1) ## False
 icc(mod1, by_group = TRUE)
 icc(mod1)
-r2_nakagawa(mod1) ## 0.65
+r2_nakagawa(mod1) ## 0.63
 
 set_theme(base = theme_classic(), #To remove the background color and the grids
           theme.font = 'serif',   #To change the font type
@@ -513,22 +575,24 @@ r1 <- random[[1]]
 
 r1
 
-out.filename <- paste0(out.dir,"00_mixed_mod_SWP_random_effects_species.jpg")
-ggsave(r1, file = out.filename, dpi=300, height=4, width=6)
+# out.filename <- paste0(out.dir,"00_mixed_mod_SWP_random_effects_species.jpg")
+# ggsave(r1, file = out.filename, dpi=300, height=4, width=6)
 
 r2 <- random[[2]]
 
 r2
 
-out.filename <- paste0(out.dir,"00_mixed_mod_SWP_random_effects_season.jpg")
-ggsave(r2, file = out.filename, dpi=300, height=4, width=6)
+r3 <- plot_grid(list(r2, r1))
+
+out.filename <- paste0(out.dir,"00_mixed_mod_SWP_random_effects.jpg")
+ggsave(r3, file = out.filename, dpi=300, height=10, width=12)
 
 ### plot realtionships
 results <- plot_model(mod1, type="pred",
            vline.color="#A9A9A9", dot.size=1.5,
            show.values=T, value.offset=.2, show.p=TRUE)
 
-results
+results[[1]]
 q1 <- results[1]
 Q <- q1$Q
 Q
@@ -584,3 +648,8 @@ pos
 out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_POS.jpg")
 ggsave(pos, file = out.filename, dpi=300, height=4, width=6)
 
+allFigs <- plot_grid(list(results[[3]],results[[4]], results[[5]],
+                          results[[6]], results[[7]], results[[8]]))
+
+out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_ALL.jpg")
+ggsave(allFigs, file = out.filename, dpi=300, height=15, width=21)

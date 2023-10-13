@@ -54,6 +54,7 @@ rf.data <- bioMeanQ_long_dist %>%
          LifeForm = as.factor(LifeForm),
          Month = as.factor(Month),
          Substrate = as.factor(Substrate)) %>%
+  # mutate(POS = ifelse(Year == 2018, NA, POS)) %>%
   # mutate(POS = recode_factor(POS, blanks = NA)) %>%
   filter(Source %in% c("USGSGauge11087020(MGD)", "LACDPWG44B(MGD)", "LACDPWF313B(MGD)")) %>%
   drop_na(CV) %>%
@@ -62,6 +63,8 @@ rf.data <- bioMeanQ_long_dist %>%
 str(rf.data)
 ## change blank values in POS
 rf.data["POS"][rf.data["POS"]==''] <- NA
+
+rf.data["POS"][rf.data["Year"]=='2018'] <- NA
 
 sum(is.na(rf.data$POS))
 dim(rf.data)
@@ -90,25 +93,21 @@ rf.data.val <- rf.data.imputed %>%
 
 str(rf.data)
 
-# sum(is.na(rf.data)) ## 0
-# 
-# ind <- which(is.na(rf.data$Substrate))
-# rf.data[ind,]
 
 ## split into training and testing
-
-setsize <- floor(nrow(rf.data)*0.8)
-index <- sample(1:nrow(rf.data), size = setsize)
-training <- rf.data.val[index,]
-testing <- rf.data.val[-index,]
-
-names(training)
+# 
+# setsize <- floor(nrow(rf.data)*0.8)
+# index <- sample(1:nrow(rf.data), size = setsize)
+# training <- rf.data.val[index,]
+# testing <- rf.data.val[-index,]
+# 
+# names(training)
 # 
 # trcontrol = trainControl(method='cv', number=10, savePredictions = T,
 #                          classProbs = F,summaryFunction = twoClassSummary,returnResamp="all")
 
 rf <- randomForest(y~., data=rf.data.val, importance = T)
-mean(rf$rsq) ## 0.74
+mean(rf$rsq) ## 0.71
 varImpPlot(rf)
 imp <- importance(rf, type = 1)
 rf
@@ -244,29 +243,79 @@ str(rf.data.red)
 #                          classProbs = F,summaryFunction = twoClassSummary,returnResamp="all")
 
 rf <- randomForest(y~., data=rf.data.val, importance = T, ntree = 1000)
-mean(rf$rsq) ## 0.84
+mean(rf$rsq) ## 0.83
 mean(rf$mse)
-
 rf
-dev.off()
-varImpPlot(rf, type = 1)
 
+# Variable importance -----------------------------------------------------
+
+library("scales")
+
+range01 <- function(x){(x-min(x))/(max(x)-min(x))}
 importance(rf, type = 1)
+## get mean and scale and % to make relative
+
+VarImp <- as.data.frame(rf$importance) 
+colnames(VarImp)[1] <- "DecreaseAcc"
+VarImp$Variable <- rownames(VarImp)
+
+
+VarImp
+
+ImpMean <- VarImp %>% 
+  # group_by(Variable) %>%
+  # summarise(MeanImp = mean(MeanDecreaseAccuracy)) %>%
+  mutate(MeanImpScaled = rescale(DecreaseAcc)) %>%
+  mutate(MeanImpPerc = (MeanImpScaled/sum(MeanImpScaled))*100)
+
+ImpMean
+
+## humanise variables - check the remote senseing
+ImpMean <- ImpMean %>%
+  mutate(VariableHuman = case_when(Variable == "POS" ~ "Tree Position",
+                                   Variable == "SJC002_POM001Combined" ~ "Discharge: SJC & POM",
+                                   Variable == "DischargeSJC002_POM001_WN001Combined" ~ "Discharge: SJC, POM & WN",
+                                   Variable == "SJC_002" ~ "Discharge: SJC",
+                                   Variable == "Replacement" ~ "Tree Replaced",
+                                   Variable == "DistToSJC002" ~ "Distance to SJC",
+                                   Variable == "Species" ~ "Species",
+                                   Variable == "Group" ~ "Group",
+                                   Variable == "Year" ~ "Year",
+                                   Variable == "Season" ~ "Season",
+                                   Variable == "Substrate" ~ "Substrate",
+                                   Variable == "Q" ~ "Stream Flow",
+                                   Variable == "WN002" ~ "Discharge: WN"
+  ))
+
+## order in increasing values
+
+ImpMean$VariableHuman <- factor(ImpMean$VariableHuman, levels=ImpMean[order(ImpMean$MeanImpPerc,decreasing=F),]$VariableHuman)
+ImpMean$VariableHuman
+
+## plot
+i1 <- ggplot(ImpMean, aes(x=MeanImpPerc, y=VariableHuman)) +
+  geom_point() +
+  scale_x_continuous("Relative Importance (%)") +
+  scale_y_discrete("") +
+  theme_bw()
+i1
+
+file.name1 <- "Figures/01_relative_importance_CV.jpg"
+ggsave(i1, filename=file.name1, dpi=300, height=5, width=8)
+
 
 # PLOT VARIABLE IMPORTANCE
-pdf(paste0( "Figures/var_imp_reduced_model_CV.pdf"), width=12, height=8)
-
-varImpPlot(rf, type = 1, main = "")
-
-dev.off()
-
-## partial plots
+# pdf(paste0( "Figures/var_imp_reduced_model_SWP_2.pdf"), width=12, height=8)
 # 
-# data(iris)
-# head(iris)
-# set.seed(543)
-# iris.rf <- randomForest(Species~., iris)
-# partialPlot(iris.rf, iris, Petal.Width, "versicolor")
+# varImpPlot(rf, type = 1, main = "")
+# 
+# dev.off()
+
+
+# Partial Plots -----------------------------------------------------------
+
+
+
 str(rf.data.val)
 
 jpeg(paste0( "Figures/02_CV_Season.jpg"))
@@ -309,15 +358,15 @@ dev.off()
 # partialPlot(rf, rf.data.val, WN002)
 # partialPlot(rf, rf.data.val, WN001)
 
-imp <- importance(rf, type = 1)
-impvar <- rownames(imp)[order(imp[, 1], decreasing=TRUE)]
-op <- par(mfrow=c(2, 3))
-
-for (i in seq_along(impvar)) {
-  partialPlot(rf, training, impvar[i], xlab=impvar[i],
-              main=paste("Partial Dependence on", impvar[i]))
-}
-par(op)
+# imp <- importance(rf, type = 1)
+# impvar <- rownames(imp)[order(imp[, 1], decreasing=TRUE)]
+# op <- par(mfrow=c(2, 3))
+# 
+# for (i in seq_along(impvar)) {
+#   partialPlot(rf, training, impvar[i], xlab=impvar[i],
+#               main=paste("Partial Dependence on", impvar[i]))
+# }
+# par(op)
 
 
 # Remove species ----------------------------------------------------------
@@ -404,28 +453,28 @@ par(op)
 
 ## split into training and testing
 
-setsize <- floor(nrow(rf.data.red)*0.8)
-index <- sample(1:nrow(rf.data.red), size = setsize)
-training <- rf.data.val[index,]
-testing <- rf.data.val[-index,]
-
-names(rf.data.val)
+# setsize <- floor(nrow(rf.data.red)*0.8)
+# index <- sample(1:nrow(rf.data.red), size = setsize)
+# training <- rf.data.val[index,]
+# testing <- rf.data.val[-index,]
+# 
+# names(rf.data.val)
 
 ( rf.cv <- rf.crossValidation(rf, rf.data.val[, 2:13], 
                               p=0.10, n=99, ntree=501) )
-7.478742*7.478742
-# Fit MSE = 52.12365 
-# Fit percent variance explained = 84.14 
-# Median permuted MSE = 57.31814 
-# Median permuted percent variance explained = 82.52 
-# Median cross-validation RMSE = 7.478742 
-# Median cross-validation MBE = -0.04562313 
-# Median cross-validation MAE = 4.90859 
+
+# Fit MSE = 59.7174 
+# Fit percent variance explained = 81.81 
+# Median permuted MSE = 65.25579 
+# Median permuted percent variance explained = 80.15 
+# Median cross-validation RMSE = 8.008139 
+# Median cross-validation MBE = -0.0137218 
+# Median cross-validation MAE = 5.297322 
 # Range of ks p-values = 0 0 
-# Range of ks D statistic = 0.2125654 0.2712042 
-# RMSE cross-validation error variance = 0.1548533 
-# MBE cross-validation error variance = 0.0731407 
-# MAE cross-validation error variance = 0.0395445 
+# Range of ks D statistic = 0.2198953 0.2942408 
+# RMSE cross-validation error variance = 0.1446234 
+# MBE cross-validation error variance = 0.07179674 
+# MAE cross-validation error variance = 0.03693445 
 
 # Mixed effects model -----------------------------------------------------
 library(sjPlot) #for plotting lmer and glmer mods
@@ -443,26 +492,26 @@ library(glmmTMB)
 
 ## data
 
-rf.data <- bioMeanQ_long_dist %>%
-  dplyr::select(CV, Species:LifeForm, Month, Year, Season, 
-                "DischargeSJC002&POM001Combined(MGD)":"RainFallMod",
-                "POM-001", "TempMeanModF",
-                "SJC-002(MGD)":"Q", DistToSJC002) %>%
-  rename(SJC002_POM001Combined = "DischargeSJC002&POM001Combined(MGD)",
-         DischargeSJC002_POM001_WN001Combined = "DischargeSJC002,POM001,&WN001Combined(MGD)",
-         SJC_002 = "SJC-002(MGD)",
-         POM001 = "POM-001",
-         WN001 = "WN-001", 
-         WN002 = "WN-002(Zone1Ditch)") %>%
-  filter(Source %in% c("USGSGauge11087020(MGD)", "LACDPWG44B(MGD)", "LACDPWF313B(MGD)")) %>%
-  drop_na(CV) %>%
-  select(-Source) %>%
-  mutate(Year = as.factor(Year),
-         Group = as.factor(Group)) %>% 
-  droplevels() 
-
-head(rf.data)
-names(rf.data.val)
+# rf.data <- bioMeanQ_long_dist %>%
+#   dplyr::select(CV, Species:LifeForm, Month, Year, Season, 
+#                 "DischargeSJC002&POM001Combined(MGD)":"RainFallMod",
+#                 "POM-001", "TempMeanModF",
+#                 "SJC-002(MGD)":"Q", DistToSJC002) %>%
+#   rename(SJC002_POM001Combined = "DischargeSJC002&POM001Combined(MGD)",
+#          DischargeSJC002_POM001_WN001Combined = "DischargeSJC002,POM001,&WN001Combined(MGD)",
+#          SJC_002 = "SJC-002(MGD)",
+#          POM001 = "POM-001",
+#          WN001 = "WN-001", 
+#          WN002 = "WN-002(Zone1Ditch)") %>%
+#   filter(Source %in% c("USGSGauge11087020(MGD)", "LACDPWG44B(MGD)", "LACDPWF313B(MGD)")) %>%
+#   drop_na(CV) %>%
+#   select(-Source) %>%
+#   mutate(Year = as.factor(Year),
+#          Group = as.factor(Group)) %>% 
+#   droplevels() 
+# 
+# head(rf.data)
+# names(rf.data.val)
 
 ## variables from RF model to include
 
@@ -483,7 +532,7 @@ anova(mod1)
 check_singularity(mod1) ## False
 icc(mod1, by_group = TRUE)
 icc(mod1)
-r2_nakagawa(mod1) ## 0.27
+r2_nakagawa(mod1) ## 0.30
 
 set_theme(base = theme_classic(), #To remove the background color and the grids
           theme.font = 'serif',   #To change the font type
@@ -506,10 +555,9 @@ ggsave(ests, filename=file.name1, dpi=300, height=8, width=10)
 random <- plot_model(mod1, type="re",
                      vline.color="#A9A9A9", dot.size=1.5,
                      show.values=T, value.offset=.2, show.p=TRUE)
+random
+r1 <- random
 
-r1 <- random[[1]]
-
-r1
 
 out.filename <- paste0(out.dir,"00_mixed_mod_CV_random_effects_species.jpg")
 ggsave(r1, file = out.filename, dpi=300, height=4, width=6)
@@ -596,4 +644,13 @@ seas <- q1$Season
 seas
 out.filename <- paste0(out.dir,"00_mixed_mod_CV_relationships_Season.jpg")
 ggsave(seas, file = out.filename, dpi=300, height=4, width=6)
+
+results
+
+allFigs <- plot_grid(list(results[[3]],results[[4]], results[[5]],
+                          results[[6]], results[[7]], results[[8]], results[[9]]))
+
+out.filename <- paste0(out.dir,"00_mixed_mod_CV_relationships_ALL.jpg")
+ggsave(allFigs, file = out.filename, dpi=300, height=20, width=35)
+
 

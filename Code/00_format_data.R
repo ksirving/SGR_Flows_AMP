@@ -498,7 +498,7 @@ load(file = "output_data/00_bio_Q_matched_groups.RData")
 head(bioMeanQ_longx)
 
 
-distance <- read.csv("input_data/dist_matrix_New.csv") %>%
+distance <- read.csv("input_data/dist_matrix_New_V2.csv") %>%
   select(X, SJC.002) %>% rename(PlantID = X) %>%
   mutate(PlantID2 = gsub(" ", "-", PlantID)) %>%
   select(-PlantID) %>%
