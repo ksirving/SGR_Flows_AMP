@@ -39,8 +39,6 @@ data <- data %>%
 subs <- data %>%
   select(PlantID:LifeForm, Substrate)
   
-
-
 ### make longer to arrange variables, create variable, season and year columns, make variables columns
 names(data)
 str(data)
@@ -67,13 +65,47 @@ alldata <- data_long %>%
 head(alldata)
 str(alldata)
 
+## replace NA with N in damage
+
+alldata$Damage[is.na(alldata$Damage)] <- "N"
+
+
+# POS levels --------------------------------------------------------------
+
+## make consistent
+
+## check plant id with pos 
+
+## extract just POS data and plant id
+pos <- alldata %>%
+  select(PlantID, POS, Season, Year) %>% ## reduce columns
+  distinct() %>%
+  group_by(PlantID, Year) %>% 
+  mutate(ValsPerYear = na.omit(POS)) %>% ## get position for each year
+  ungroup() %>%
+  group_by(PlantID) %>%
+  mutate(ValPerPlant = names(which.max(table(ValsPerYear)))) %>% ## get most common position for plant from value per year
+  ## some POS values not rendering, when most common is blank, usually Replacements or others with only a couple of values
+  mutate(ValPerPlantx = ifelse(ValPerPlant == "", ValsPerYear, ValPerPlant)) %>% ## if blank take year value
+  mutate(ValPerPlantx = ifelse(Year == 2018, NA, ValPerPlantx)) %>% ## all 2018 values to NA - suggested fro Michael
+  mutate(ValPerPlantx = na_if(ValPerPlantx, ""))  %>% ## if still blank make NA
+  fill(ValPerPlantx, .direction = "downup") %>% ## fill NAswith column values per group
+  select(PlantID, ValPerPlantx) %>% ## columns plants and POS
+  distinct() ## remove duplicates
+
+## join back to main DF
+
+alldataPOS <- right_join(alldata, pos, by = "PlantID", relationship = "many-to-many") %>%
+  select(-POS) %>% rename(POS = ValPerPlantx)
+  
+
 # Plot some data ----------------------------------------------------------
 
 ## prep data 
 
 ## season and year as factor, swp, cv as numeric
 
-alldata <- alldata %>%
+alldata <- alldataPOS %>%
   mutate(SWP = as.numeric(SWP),
          CV = as.numeric(CV),
          Season = as.factor(Season),
@@ -196,20 +228,24 @@ hydrox <- hydro %>%
   mutate("Source" = gsub( " ", "", Source)) #%>%
 
 cfs <- unique(hydrox$Source)[c(1,3,5)] ## get cfs q
-cfs
-unique(hydrox$Source)
 
+## assign discharge to associated groups
 hydrox <- hydrox %>%
   mutate(Units = ifelse(Source %in% cfs, "CFS", "MGD")) %>%
   # mutate(Units = ifelse(Source == "RainfallIntensity(in)", "INCHES", Units)) %>%
   mutate(Q = as.numeric(Q)) %>%
-  mutate(Group = ifelse(Source %in% c("USGSGauge11087020(MGD)", "USGSAvgFlow(cfs)"), "Groups 1,2,3", "Group 4")) %>%
-  mutate(Group = ifelse(Source %in% c("LACDPWF313B(MGD)", "LACDPWF313B(cfs)"), "Groups 5", Group)) %>%
-  mutate(Group = ifelse(Source %in% c( "POM-001", "WN-002(Zone1Ditch)", "WN-001",
-                                      "DischargeSJC002&POM001Combined(MGD)", "DischargeSJC002,POM001,&WN001Combined(MGD)",
-                                      "SJC-002(MGD)"), "All Groups ", Group)) %>%
+  mutate(Group = case_when(Source %in% c("USGSGauge11087020(MGD)", "USGSAvgFlow(cfs)") ~ "Group 1,2,3",
+                           # Source %in% c("USGSGauge11087020(MGD)", "USGSAvgFlow(cfs)") ~ "Group 2",
+                           # Source %in% c("USGSGauge11087020(MGD)", "USGSAvgFlow(cfs)") ~ "Group 3",
+                           Source %in% c("LACDPWG44B(cfs)", "LACDPWG44B(MGD)") ~ "Group 4",
+                           Source %in% c("LACDPWF313B(cfs)", "LACDPWF313B(MGD)") ~ "Group 5",
+                           Source %in% c("SJC-002(MGD)", "POM-001", "DischargeSJC002&POM001Combined(MGD)", "DischargeSJC002,POM001,&WN001Combined(MGD)") ~ "Group 1,2,3,4",
+                           Source %in% c("WN-001", "WN-002(Zone1Ditch)") ~ "Group 4")) %>%
   rename(RainfallIntensity = "Rainfall Intensity (in)") %>%
   mutate(RainfallIntensity = as.numeric(RainfallIntensity))
+
+## WN-002(Zone1Ditch) and "POM-001 aren't on the map, so may need to be changed
+                           
 
 write.csv(hydrox, "output_data/00_daily_Q_long.csv")
 unique(hydrox$Source)
@@ -241,7 +277,7 @@ q2 <- ggplot(subset(hydrox, Source %in% cfsSources), aes(x=Date, y=Q)) +
     # Features of the first axis
     name = "Discharge (cfs)",
     # Add a second axis and specify its features
-    sec.axis = sec_axis(~./coeff, name="Rainfall (in)")) +
+    sec.axis = sec_axis(~./coeffcfs, name="Rainfall (in)")) +
   facet_grid(~Source, scales= "free_y")
 
 
@@ -309,6 +345,7 @@ head(climsx)
 ## join with hydro
 
 hydroxclim <- inner_join(climsx, hydrox, by="Date")
+
 head(hydroxclim)
 
 ### plot
@@ -342,42 +379,6 @@ hydroxDate <- hydroxclim %>%
 
 unique(hydroxDate$Source)
 
-# test <- hydroxDate %>%
-#   filter(Source == "RainfallIntensity",
-#          Year == 2018)
-# 
-# test2 <- test %>%
-#   group_by(Year, Month) %>%
-#   summarise(MinQ = mean(na.omit(Q)))
-
-# unique(test$Year)
-
-# monthlyQ <- hydroxDate %>%
-#   group_by(Year, Month, Source) %>%
-#   summarise(MinQ = min(na.omit(Q)), MaxQ = max(na.omit(Q)), MedianQ = median(na.omit(Q)), MeanQ = mean(na.omit(Q))) %>%
-#   mutate(Units = ifelse(Source %in% cfs, "CFS", "MGD")) %>%
-#   mutate(Units = ifelse(Source == "RainfallIntensity", "INCHES", Units)) %>%
-#   mutate(Group1 = ifelse(Source %in% c( "RainfallIntensity","POM-001", "WN-002(Zone1Ditch)", "WN-001",
-#                                         "DischargeSJC002&POM001Combined(MGD)", "DischargeSJC002,POM001,&WN001Combined(MGD)",
-#                                         "SJC-002(MGD)","USGSGauge11087020(MGD)", "USGSAvgFlow(cfs)"), "Yes", NA)) %>%
-#   mutate(Group2 = ifelse(Source %in% c( "RainfallIntensity","POM-001", "WN-002(Zone1Ditch)", "WN-001",
-#                                         "DischargeSJC002&POM001Combined(MGD)", "DischargeSJC002,POM001,&WN001Combined(MGD)",
-#                                         "SJC-002(MGD)","USGSGauge11087020(MGD)", "USGSAvgFlow(cfs)"), "Yes", NA)) %>%
-#   mutate(Group3 = ifelse(Source %in% c( "RainfallIntensity","POM-001", "WN-002(Zone1Ditch)", "WN-001",
-#                                         "DischargeSJC002&POM001Combined(MGD)", "DischargeSJC002,POM001,&WN001Combined(MGD)",
-#                                         "SJC-002(MGD)","USGSGauge11087020(MGD)", "USGSAvgFlow(cfs)"), "Yes", NA)) %>%
-#   mutate(Group4 = ifelse(Source %in% c("RainfallIntensity","POM-001", "WN-002(Zone1Ditch)", "WN-001",
-#                                        "DischargeSJC002&POM001Combined(MGD)", "DischargeSJC002,POM001,&WN001Combined(MGD)",
-#                                        "SJC-002(MGD)","LACDPWG44B(MGD)", "LACDPWG44B(cfs)"), "Yes", NA)) %>%
-#   mutate(Group5 = ifelse(Source %in% c( "RainfallIntensity","POM-001", "WN-002(Zone1Ditch)", "WN-001",
-#                                        "DischargeSJC002&POM001Combined(MGD)", "DischargeSJC002,POM001,&WN001Combined(MGD)",
-#                                        "SJC-002(MGD)", "LACDPWF313B(MGD)", "LACDPWF313B(cfs)"), "Yes", NA)) %>%
-#   pivot_longer(Group1:Group5, names_to = "Group", values_to = "Value") %>%
-#   mutate(GroupCheck = ifelse(Value =="Yes", Group, NA)) %>%
-#   drop_na(GroupCheck) %>% select(-GroupCheck, -Value)   %>% 
-#   mutate(GroupQ = gsub("roup", "", Group)) %>%
-#   mutate(Year = as.factor(Year))
-
 cfs <- c( "USGSAvgFlow(cfs)", "LACDPWF313B(cfs)", "LACDPWG44B(cfs)")
 inches <- c("RainFallMod", "RainfallIntensity")
 
@@ -387,25 +388,6 @@ monthlyQ <- hydroxDate %>%
   mutate(Units = ifelse(Source %in% cfs, "CFS", "MGD")) %>%
   mutate(Units = ifelse(Source %in% inches, "INCHES", Units)) %>%
   mutate(Units = ifelse(Source == "TempMeanModF", "Fahrenheit", Units)) %>%
-  # mutate(Group1 = ifelse(Source %in% c( "RainfallIntensity","POM-001", "WN-002(Zone1Ditch)", "WN-001",
-  #                                       "DischargeSJC002&POM001Combined(MGD)", "DischargeSJC002,POM001,&WN001Combined(MGD)",
-  #                                       "SJC-002(MGD)","USGSGauge11087020(MGD)", "USGSAvgFlow(cfs)"), "Yes", NA)) %>%
-  # mutate(Group2 = ifelse(Source %in% c( "RainfallIntensity","POM-001", "WN-002(Zone1Ditch)", "WN-001",
-  #                                       "DischargeSJC002&POM001Combined(MGD)", "DischargeSJC002,POM001,&WN001Combined(MGD)",
-  #                                       "SJC-002(MGD)","USGSGauge11087020(MGD)", "USGSAvgFlow(cfs)"), "Yes", NA)) %>%
-  # mutate(Group3 = ifelse(Source %in% c( "RainfallIntensity","POM-001", "WN-002(Zone1Ditch)", "WN-001",
-  #                                       "DischargeSJC002&POM001Combined(MGD)", "DischargeSJC002,POM001,&WN001Combined(MGD)",
-  #                                       "SJC-002(MGD)","USGSGauge11087020(MGD)", "USGSAvgFlow(cfs)"), "Yes", NA)) %>%
-  # mutate(Group4 = ifelse(Source %in% c("RainfallIntensity","POM-001", "WN-002(Zone1Ditch)", "WN-001",
-  #                                      "DischargeSJC002&POM001Combined(MGD)", "DischargeSJC002,POM001,&WN001Combined(MGD)",
-  #                                      "SJC-002(MGD)","LACDPWG44B(MGD)", "LACDPWG44B(cfs)"), "Yes", NA)) %>%
-  # mutate(Group5 = ifelse(Source %in% c( "RainfallIntensity","POM-001", "WN-002(Zone1Ditch)", "WN-001",
-  #                                       "DischargeSJC002&POM001Combined(MGD)", "DischargeSJC002,POM001,&WN001Combined(MGD)",
-  #                                       "SJC-002(MGD)", "LACDPWF313B(MGD)", "LACDPWF313B(cfs)"), "Yes", NA)) %>%
-  # pivot_longer(Group1:Group5, names_to = "Group", values_to = "Value") %>%
-  # mutate(GroupCheck = ifelse(Value =="Yes", Group, NA)) %>%
-  # drop_na(GroupCheck) %>% select(-GroupCheck, -Value)   %>% 
-  # mutate(GroupQ = gsub("roup", "", Group)) %>%
   mutate(Year = as.factor(Year))
 
 head(monthlyQ)
@@ -442,7 +424,7 @@ save(bioMeanQ, file = "output_data/00_bio_meanQ_data.RData")
 
 cor(bioMeanQ$RainFallMod, bioMeanQ$RainfallIntensity, use = "complete.obs")
 ## 0.96
-
+load(file = "output_data/00_bio_meanQ_data.RData")
 
 # Related Q to Group ------------------------------------------------------
 
@@ -450,25 +432,47 @@ cor(bioMeanQ$RainFallMod, bioMeanQ$RainfallIntensity, use = "complete.obs")
 ## groups 1,2,3 = USGS Gauge 11087020 
 ##. group 4 = LACDPW G44B 
 ## group 5 = LACDPW F313B 
-head(bioMeanQ)
+names(bioMeanQ)
 
 bioMeanQ_long <- bioMeanQ %>%
-  pivot_longer(c("LACDPWF313B(MGD)":"LACDPWG44B(cfs)", "USGSAvgFlow(cfs)":"USGSGauge11087020(MGD)"), 
+  pivot_longer(c("DischargeSJC002&POM001Combined(MGD)":"POM-001", "SJC-002(MGD)", "USGSAvgFlow(cfs)":"WN-002(Zone1Ditch)"), 
                names_to = "Source", values_to = "Q") %>%
-  mutate(Group1 = ifelse(Source %in% c("USGSGauge11087020(MGD)", "USGSAvgFlow(cfs)"), "Yes", NA)) %>%
-                mutate(Group2 = ifelse(Source %in% c("USGSGauge11087020(MGD)", "USGSAvgFlow(cfs)"), "Yes", NA)) %>%
-                mutate(Group3 = ifelse(Source %in% c("USGSGauge11087020(MGD)", "USGSAvgFlow(cfs)"), "Yes", NA)) %>%
-                mutate(Group4 = ifelse(Source %in% c("LACDPWG44B(MGD)", "LACDPWG44B(cfs)"), "Yes", NA)) %>%
+  mutate(Group1 = ifelse(Source %in% c("USGSGauge11087020(MGD)", "USGSAvgFlow(cfs)","SJC-002(MGD)", "POM-001", "DischargeSJC002&POM001Combined(MGD)", "DischargeSJC002,POM001,&WN001Combined(MGD)"), "Yes", NA)) %>%
+                mutate(Group2 = ifelse(Source %in% c("USGSGauge11087020(MGD)", "USGSAvgFlow(cfs)","SJC-002(MGD)", "POM-001", "DischargeSJC002&POM001Combined(MGD)", "DischargeSJC002,POM001,&WN001Combined(MGD)"), "Yes", NA)) %>%
+                mutate(Group3 = ifelse(Source %in% c("USGSGauge11087020(MGD)", "USGSAvgFlow(cfs)","SJC-002(MGD)", "POM-001", "DischargeSJC002&POM001Combined(MGD)", "DischargeSJC002,POM001,&WN001Combined(MGD)"), "Yes", NA)) %>%
+                mutate(Group4 = ifelse(Source %in% c("LACDPWG44B(MGD)", "LACDPWG44B(cfs)","SJC-002(MGD)", "POM-001", "DischargeSJC002&POM001Combined(MGD)", "DischargeSJC002,POM001,&WN001Combined(MGD)","WN-001", "WN-002(Zone1Ditch)"), "Yes", NA)) %>%
                 mutate(Group5 = ifelse(Source %in% c("LACDPWF313B(MGD)", "LACDPWF313B(cfs)"), "Yes", NA)) %>%
               pivot_longer(Group1:Group5, names_to = "GroupGage", values_to = "Value") %>%
               mutate(GroupCheck = ifelse(Value =="Yes", GroupGage, NA)) %>%
               drop_na(GroupCheck)  %>%
               mutate(GroupQ = gsub("roup", "", GroupGage))
+              
+# sum(is.na(bioMeanQ_long$GroupCheck))
 
 ### remove row if plant group does not match Q group
 bioMeanQ_longx <- bioMeanQ_long %>%
   mutate(GroupKeep = ifelse(Group == GroupQ, "Yes", "No")) %>%
    select(-GroupCheck, - Value)  %>% filter(GroupKeep == "Yes") 
+names(bioMeanQ_longx2)
+
+## separate q into gages and outfalls, Replace outfall Q values with 0 in groups they don't affect
+
+bioMeanQ_longx2 <- bioMeanQ_longx %>%
+  pivot_wider(names_from = Source, values_from = Q) %>%
+  pivot_longer(c("USGSAvgFlow(cfs)":"LACDPWG44B(cfs)", "LACDPWF313B(MGD)", "LACDPWF313B(cfs)"), names_to = "Source", values_to = "Q") %>%
+  rename(SJC002_POM001Combined = "DischargeSJC002&POM001Combined(MGD)",
+         DischargeSJC002_POM001_WN001Combined = "DischargeSJC002,POM001,&WN001Combined(MGD)",
+         SJC_002 = "SJC-002(MGD)",
+         POM001 = "POM-001",
+         WN001 = "WN-001", 
+         WN002 = "WN-002(Zone1Ditch)") %>%
+  mutate(SJC002_POM001Combined = case_when(Group == "G5" ~ 0.001, .default = SJC002_POM001Combined)) %>%
+  mutate(DischargeSJC002_POM001_WN001Combined = case_when(Group == "G5" ~ 0.001, .default = DischargeSJC002_POM001_WN001Combined)) %>%
+  mutate(POM001 = case_when(Group == "G5" ~ 0.001, .default = POM001)) %>%
+  mutate(SJC_002 = case_when(Group == "G5" ~ 0.001, .default = SJC_002)) %>%
+  mutate(WN001 = case_when(Group %in% c("G5", "G1", "G2", "G3") ~ 0.001, .default = WN001)) %>%
+  mutate(WN002 = case_when(Group %in% c("G5", "G1", "G2", "G3") ~ 0.001, .default = WN002)) %>%
+  drop_na(Q) ## remove nas from Q - from gauges not in group
 
 save(bioMeanQ_longx, file = "output_data/00_bio_Q_matched_groups.RData")
 
@@ -478,7 +482,7 @@ names(bioMeanQ_longx)
 
 b1 <- ggplot(bioMeanQ_longx, aes(y=SWP, x=Q)) +
   geom_smooth(method = "lm")
-
+b1
 out.filename <- paste0(out.dir,"00_SWP_Q.jpg")
 ggsave(b1, file = out.filename, dpi=300, height=4, width=6)
 
@@ -493,11 +497,11 @@ ggsave(b2, file = out.filename, dpi=300, height=4, width=6)
 
 # Add distance ------------------------------------------------------------
 
-
+## data
 load(file = "output_data/00_bio_Q_matched_groups.RData")
 head(bioMeanQ_longx)
 
-
+## upload distance and format
 distance <- read.csv("input_data/dist_matrix_New_V2.csv") %>%
   select(X, SJC.002) %>% rename(PlantID = X) %>%
   mutate(PlantID2 = gsub(" ", "-", PlantID)) %>%
@@ -507,10 +511,13 @@ head(distance)
 
 sum(unique(bioMeanQ_longx$PlantID) %in% unique(distance$PlantID2))
 
-bioMeanQ_long_dist <- full_join(bioMeanQ_longx, distance, by = c("PlantID" = "PlantID2"))
+## join data with distances
+bioMeanQ_long_dist <- full_join(bioMeanQ_longx2, distance, by = c("PlantID" = "PlantID2"))
 
+## save out
 save(bioMeanQ_long_dist, file = "output_data/00_bio_Q_matched_groups_distance.RData")
 
+## plot values for check
 load(file = "output_data/00_bio_Q_matched_groups_distance.RData")
 names(bioMeanQ_long_dist)
 

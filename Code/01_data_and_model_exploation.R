@@ -37,18 +37,17 @@ names(bioMeanQ_long_dist)
 
 ## substrate has NAs, try model without substrate, then with substrate but removing the NAs
 ## rearrange for ease into RF - remove observed rainfall
-
+names(rf.data)
 rf.data <- bioMeanQ_long_dist %>%
   dplyr::select(SWP, Species:LifeForm, Month, Year, Season, POS, Substrate,
-                "DischargeSJC002&POM001Combined(MGD)":"RainFallMod",
-                "POM-001", "TempMeanModF",
-                "SJC-002(MGD)":"Q", DistToSJC002) %>%
-  rename(SJC002_POM001Combined = "DischargeSJC002&POM001Combined(MGD)",
-         DischargeSJC002_POM001_WN001Combined = "DischargeSJC002,POM001,&WN001Combined(MGD)",
-         SJC_002 = "SJC-002(MGD)",
-         POM001 = "POM-001",
-         WN001 = "WN-001", 
-         WN002 = "WN-002(Zone1Ditch)") %>%
+                RainFallMod:Replacement, SJC002_POM001Combined:WN002,
+                Q, DistToSJC002, Source) %>%
+  # rename(SJC002_POM001Combined = "DischargeSJC002&POM001Combined(MGD)",
+  #        DischargeSJC002_POM001_WN001Combined = "DischargeSJC002,POM001,&WN001Combined(MGD)",
+  #        SJC_002 = "SJC-002(MGD)",
+  #        POM001 = "POM-001",
+  #        WN001 = "WN-001", 
+  #        WN002 = "WN-002(Zone1Ditch)") %>%
   mutate(POS = as.factor(POS),
          Species = as.factor(Species),
          Group = as.factor(Group),
@@ -71,9 +70,7 @@ rf.data["POS"][rf.data["Year"]=='2018'] <- NA
 sum(is.na(rf.data$POS))
 dim(rf.data)
 
-## impute missing values
-rf.data.imputed <- rfImpute(SWP ~ ., rf.data)
-head(rf.data.imputed)
+
 
 # Random Forest Model -----------------------------------------------------
 
@@ -83,6 +80,10 @@ set.seed(234) ## reproducibility
 b=10001
 
 sp=0.6 ## for dependence plots
+
+## impute missing values
+rf.data.imputed <- rfImpute(SWP ~ ., rf.data)
+head(rf.data.imputed)
 
 ## get path for functions
 source("/Users/katieirving/Library/CloudStorage/OneDrive-SCCWRP/Documents - Katie’s MacBook Pro/git/RB9_Vulnerability_Arroyo_Toad/original_model/Current/randomForests/PARTITIONING/DATA3/Functions.R")
@@ -139,20 +140,25 @@ dev.off()
 
 ## non important and remove combined doscharge
 names(rf.data)
-## month, lifeform 
+## put importance in a df
+imp <- as.data.frame(importance(rf, type = 1))
 
-rf.data.red <- rf.data %>%
-  select(-LifeForm, -Month, -DischargeSJC002_POM001_WN001Combined, -SJC002_POM001Combined) %>%
+imp
+## NA all vars with negative importance 
+vars <- ifelse(imp$`%IncMSE` > 0, rownames(imp), NA)
+## remove Nas
+vars <- vars[!is.na(vars)]
+vars ## vars with posituve importance
+
+## month, lifeform 
+rf.data.red <- rf.data.imputed %>%
+  select(SWP, all_of(vars), -LifeForm) %>%
   mutate(Species = as.factor(Species), Group = as.factor(Group), Year = as.factor(Year)) %>% 
   droplevels()
 
 rf.data.val <- rf.data.red %>%
   rename(y = SWP) %>% as.data.frame()
 str(rf.data.red)
-# sum(is.na(rf.data)) ## 0
-# 
-# ind <- which(is.na(rf.data$Substrate))
-# rf.data[ind,]
 
 ## split into training and testing
 
@@ -167,7 +173,7 @@ names(training)
 #                          classProbs = F,summaryFunction = twoClassSummary,returnResamp="all")
 
 rf <- randomForest(y~., data=rf.data.val, importance = T, ntree = 1000)
-mean(rf$rsq) ## 0.62
+mean(rf$rsq) ## 0.90
 rf
 varImpPlot(rf)
 importance(rf, type = 1)
@@ -214,47 +220,6 @@ for (i in seq_along(impvar)) {
 }
 par(op)
 
-
-# Remove negative importance variables ------------------------------------
-imp <- importance(rf, type = 1)
-imp <- as.data.frame(imp)
-imp
-vars <- ifelse(imp$`%IncMSE` > 0, rownames(imp), NA)
-vars <- vars[!is.na(vars)]
-vars
-names(rf.data)
-## WN001, WN002, POM001, RainFallMod, TempMeanModF, 
-
-rf.data.red <- rf.data.imputed %>%
-  select(SWP, all_of(vars), -LifeForm, -WN001) %>%
-  mutate(Species = as.factor(Species), Group = as.factor(Group), Year = as.factor(Year)) %>% 
-  droplevels()
-
-rf.data.val <- rf.data.red %>%
-  rename(y = SWP) %>% as.data.frame()
-str(rf.data.red)
-# sum(is.na(rf.data)) ## 0
-# 
-# ind <- which(is.na(rf.data$Substrate))
-# rf.data[ind,]
-
-## split into training and testing
-
-# setsize <- floor(nrow(rf.data.red)*0.8)
-# index <- sample(1:nrow(rf.data.red), size = setsize)
-# training <- rf.data.val[index,]
-# testing <- rf.data.val[-index,]
-# 
-# names(training)
-# 
-# trcontrol = trainControl(method='cv', number=10, savePredictions = T,
-#                          classProbs = F,summaryFunction = twoClassSummary,returnResamp="all")
-
-rf <- randomForest(y~., data=rf.data.val, importance = T, ntree = 1000)
-mean(rf$rsq) ## 0.91
-rf
-
-
 # Variable importance -----------------------------------------------------
 
 library("scales")
@@ -292,7 +257,10 @@ ImpMean <- ImpMean %>%
                                    Variable == "Season" ~ "Season",
                                    Variable == "Substrate" ~ "Substrate",
                                    Variable == "Q" ~ "Stream Flow",
-                                   Variable == "WN002" ~ "Discharge: WN"
+                                   Variable == "WN002" ~ "Discharge: WN",
+                                   Variable == "RainfallIntensity" ~ "Observed Rainfall",
+                                   Variable == "POM001" ~ "Discharge: POM",
+                                   Variable == "WN002" ~ "Discharge: WN (zone ditch)",
                                    ))
 
 ## order in increasing values
@@ -412,7 +380,7 @@ names(training)
 #                          classProbs = F,summaryFunction = twoClassSummary,returnResamp="all")
 
 rf <- randomForest(y~., data=rf.data.val, importance = T, ntree = 1000)
-mean(rf$rsq) ## 0.22
+mean(rf$rsq) ##
 rf
 varImpPlot(rf)
 importance(rf, type = 1)
@@ -488,6 +456,20 @@ names(rf.data.val)
 # MBE cross-validation error variance = 0.0009840741 
 # MAE cross-validation error variance = 0.0006018589 
 
+## Feb 2024
+# Fit MSE = 1.043827 
+# Fit percent variance explained = 90.15 
+# Median permuted MSE = 2.622232 
+# Median permuted percent variance explained = 74.9 
+# Median cross-validation RMSE = 1.614194 
+# Median cross-validation MBE = 0.002431555 
+# Median cross-validation MAE = 1.13129 
+# Range of ks p-values = 1.332268e-15 2.747508e-05 
+# Range of ks D statistic = 0.07668067 0.1355042 
+# RMSE cross-validation error variance = 0.003508198 
+# MBE cross-validation error variance = 0.002995246 
+# MAE cross-validation error variance = 0.001178508
+
 # Mixed effects model -----------------------------------------------------
 library(sjPlot) #for plotting lmer and glmer mods
 library(sjmisc)
@@ -526,21 +508,31 @@ library(glmmTMB)
 #   droplevels() 
 # 
 # head(rf.data)
-names(rf.data.imputed)
+names(rf.data.red)
+str(rf.data.red)
 
-corrf <- rf.data.imputed[,c(10:17, 19, 20)]
+corrf <- rf.data.red[,c(8,10:16)]
+str(corrf)
 cor(corrf)
-## variables from RF model to include
 
+## rescale variables
+rf.data.rescale <- rf.data.red %>%
+  mutate(Q_sc = rescale(Q, to = c(0,1)),
+         DischargeSJC002_POM001_WN001Combined_sc = rescale(DischargeSJC002_POM001_WN001Combined, to = c(0,1)),
+         RainfallIntensity_sc = rescale(RainfallIntensity, to = c(0,1)),
+         DistToSJC002_sc = rescale(DistToSJC002, to = c(0,1)))
+
+## variables from RF model to include
+?rescale
 ## removed  DischargeSJC002_POM001_WN001Combined
 #  
 
-mod1 <- lmer(formula = SWP ~  Q + SJC_002 + Replacement + Year + Group + DistToSJC002+ Substrate+ POS+ 
+mod1 <- lmer(formula = SWP ~  RainfallIntensity_sc + Q_sc + DischargeSJC002_POM001_WN001Combined_sc + Replacement + Year + Group + DistToSJC002_sc+ Substrate + POS+ 
                # (1|Year) + ## remove due to low ICC
                # (1|Group) + ## remove due to low ICC
                (1|Species) +
                (1|Season),
-             data    = rf.data.imputed) 
+             data    = rf.data.rescale) 
 
 summary(mod1)
 anova(mod1)
@@ -588,68 +580,58 @@ out.filename <- paste0(out.dir,"00_mixed_mod_SWP_random_effects.jpg")
 ggsave(r3, file = out.filename, dpi=300, height=10, width=12)
 
 ### plot realtionships
-results <- plot_model(mod1, type="pred",
-           vline.color="#A9A9A9", dot.size=1.5,
-           show.values=T, value.offset=.2, show.p=TRUE)
-
-results[[1]]
-q1 <- results[1]
-Q <- q1$Q
-Q
+# results <- plot_model(mod1, type="pred",
+#            vline.color="#A9A9A9", dot.size=1.5,
+#            show.values=T, value.offset=.2, show.p=TRUE, ci.style = c("whisker"))
+# 
+mod1
+## gage discharge
+Q <- plot_model(mod1, type="pred", terms = c("Q_sc"))
 out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_Q.jpg")
 ggsave(Q, file = out.filename, dpi=300, height=4, width=6)
 
+## combined outfall discharge
+of
+of <- plot_model(mod1, type="pred", terms = c("DischargeSJC002_POM001_WN001Combined_sc"))
+out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_combined_outfall.jpg")
+ggsave(of, file = out.filename, dpi=300, height=4, width=6)
 
-q1 <- results[2]
-sj <- q1$SJC_002
-sj
-out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_SJCWRP.jpg")
-ggsave(sj, file = out.filename, dpi=300, height=4, width=6)
-
-q1 <- results[3]
-rep <- q1$Replacement
+## replacement
 rep
+rep <- plot_model(mod1, type="pred", terms = c("Replacement"))
 out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_replacement.jpg")
 ggsave(rep, file = out.filename, dpi=300, height=4, width=6)
 
-# q1 <- results[4]
-# comb <- q1$DischargeSJC002_POM001_WN001Combined
-# comb
-# out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_combWRP.jpg")
-# ggsave(comb, file = out.filename, dpi=300, height=4, width=6)
-
-q1 <- results[4]
-year <- q1$Year
+## Year
 year
+year <- plot_model(mod1, type="pred", terms = c("Year"))
 out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_year.jpg")
 ggsave(year, file = out.filename, dpi=300, height=4, width=6)
 
-q1 <- results[5]
-group <- q1$Group
-group
+## group
+group <- plot_model(mod1, type="pred", terms = c("Group"))
 out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_group.jpg")
 ggsave(group, file = out.filename, dpi=300, height=4, width=6)
 
-q1 <- results[6]
-dist <- q1$DistToSJC002
+## distance
 dist
+dist <- plot_model(mod1, type="pred", terms = c("DistToSJC002_sc"))
 out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_distance.jpg")
 ggsave(dist, file = out.filename, dpi=300, height=4, width=6)
 
-q1 <- results[7]
-sub <- q1$Substrate
-sub
+## substrate
+sub <- plot_model(mod1, type="pred", terms = c("Substrate"))
 out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_substrate.jpg")
 ggsave(sub, file = out.filename, dpi=300, height=4, width=10)
 
-q1 <- results[8]
-pos <- q1$POS
+# position
 pos
+pos <- plot_model(mod1, type="pred", terms = c("POS"))
 out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_POS.jpg")
 ggsave(pos, file = out.filename, dpi=300, height=4, width=6)
 
-allFigs <- plot_grid(list(results[[3]],results[[4]], results[[5]],
-                          results[[6]], results[[7]], results[[8]]))
-
-out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_ALL.jpg")
-ggsave(allFigs, file = out.filename, dpi=300, height=15, width=21)
+# allFigs <- plot_grid(list(results[[3]],results[[4]], results[[5]],
+#                           results[[6]], results[[7]], results[[8]]))
+# 
+# out.filename <- paste0(out.dir,"00_mixed_mod_SWP_relationships_ALL.jpg")
+# ggsave(allFigs, file = out.filename, dpi=300, height=15, width=21)

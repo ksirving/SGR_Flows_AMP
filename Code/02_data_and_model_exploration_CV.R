@@ -631,7 +631,7 @@ q1 <- results[7]
 subst <- q1$Substrate
 subst
 out.filename <- paste0(out.dir,"00_mixed_mod_CV_relationships_substrate.jpg")
-ggsave(subst, file = out.filename, dpi=300, height=4, width=6)
+ggsave(subst, file = out.filename, dpi=300, height=4, width=10)
 
 q1 <- results[8]
 pos <- q1$POS

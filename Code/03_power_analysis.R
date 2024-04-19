@@ -19,34 +19,42 @@ names(bioMeanQ_long_dist)
 
 rf.data <- bioMeanQ_long_dist %>%
   dplyr::select(SWP, CV, PlantID:LifeForm, Month, Year, Season, POS, Substrate,
-                "DischargeSJC002&POM001Combined(MGD)":"RainFallMod",
-                "POM-001", "TempMeanModF",
-                "SJC-002(MGD)":"Q", DistToSJC002) %>%
-  rename(SJC002_POM001Combined = "DischargeSJC002&POM001Combined(MGD)",
-         DischargeSJC002_POM001_WN001Combined = "DischargeSJC002,POM001,&WN001Combined(MGD)",
-         SJC_002 = "SJC-002(MGD)",
-         POM001 = "POM-001",
-         WN001 = "WN-001", 
-         WN002 = "WN-002(Zone1Ditch)") %>%
+                SJC002_POM001Combined:WN002,
+                Q, "TempMeanModF",
+                RainFallMod:TempMeanModF, DistToSJC002, Source) %>%
+  # rename(SJC002_POM001Combined = "DischargeSJC002&POM001Combined(MGD)",
+  #        DischargeSJC002_POM001_WN001Combined = "DischargeSJC002,POM001,&WN001Combined(MGD)",
+  #        SJC_002 = "SJC-002(MGD)",
+  #        POM001 = "POM-001",
+  #        WN001 = "WN-001", 
+  #        WN002 = "WN-002(Zone1Ditch)") %>%
   mutate(POS = as.factor(POS),
          Species = as.factor(Species),
          Group = as.factor(Group),
          LifeForm = as.factor(LifeForm),
          Month = as.factor(Month),
-         Substrate = as.factor(Substrate)) %>%
+         Substrate = as.factor(Substrate),
+         PlantID = as.factor(PlantID)) %>%
   # mutate(POS = ifelse(Year == 2018, NA, POS)) %>%
   # mutate(POS = recode_factor(POS, blanks = NA)) %>%
   filter(Source %in% c("USGSGauge11087020(MGD)", "LACDPWG44B(MGD)", "LACDPWF313B(MGD)")) %>%
   drop_na(SWP, CV) %>%
   select(-Source)
 
-## change blank values in POS
-rf.data["POS"][rf.data["POS"]==''] <- NA
-
-rf.data["POS"][rf.data["Year"]=='2018'] <- NA
-
 sum(is.na(rf.data$POS))
 dim(rf.data)
+
+str(rf.data)
+
+## define and remove plantids 
+plantids <- rf.data %>%
+  select(PlantID)
+
+rf.data <- rf.data %>%
+  select(-PlantID)
+
+rf.datax <- cbind(plantids, rf.data)
+rf.datax
 
 ## impute missing values
 rf.data.imputed <- rfImpute(SWP ~ ., rf.data)
@@ -62,7 +70,7 @@ cor(rf.data.imputedcv$CV, rf.data.imputed$SJC_002) ## 0.0206011
 
 ## correlation per year
 length(unique(rf.data$PlantID)) ## 113
-datacor <- rf.data %>%
+datacor <- rf.datax %>%
   select(PlantID, SWP, SJC_002, Q, Year, Season) %>%
   group_by(Year, Season) %>%
   summarise(corQ = round(cor(SWP, Q), digits = 4),
@@ -87,7 +95,7 @@ mean(datacorcv$corQ) ## 0.03059078
 
 # Power analysis ----------------------------------------------------------
 example
-## Q
+## Comb Q
 ?wp.correlation
 example=wp.correlation(n=seq(1152,1152*15,1152), r=-0.034, alternative = "two.sided") 
 df<-as.data.frame(matrix(ncol = 4, nrow=15))
