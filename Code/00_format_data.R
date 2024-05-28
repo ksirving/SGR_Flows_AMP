@@ -220,7 +220,6 @@ hydro
 ## format date, make long, make unit and gauge columns, add impacting group
 names(hydro)
 
-
 hydrox <- hydro %>%
   mutate(Date = lubridate::mdy(Date)) %>%
   pivot_longer(cols = "USGS Avg Flow (cfs)":"Discharge SJC002, POM001, & WN001 Combined (MGD)", 
@@ -455,7 +454,7 @@ bioMeanQ_longx <- bioMeanQ_long %>%
    select(-GroupCheck, - Value)  %>% filter(GroupKeep == "Yes") 
 names(bioMeanQ_longx2)
 
-## separate q into gages and outfalls, Replace outfall Q values with 0 in groups they don't affect
+## separate q into gages and outfalls - this gets updated and formatted blow
 
 bioMeanQ_longx2 <- bioMeanQ_longx %>%
   pivot_wider(names_from = Source, values_from = Q) %>%
@@ -476,6 +475,7 @@ bioMeanQ_longx2 <- bioMeanQ_longx %>%
 
 save(bioMeanQ_longx, file = "output_data/00_bio_Q_matched_groups.RData")
 
+
 ## plot bio against hydro
 
 names(bioMeanQ_longx)
@@ -494,12 +494,11 @@ b2
 out.filename <- paste0(out.dir,"00_CV_Q.jpg")
 ggsave(b2, file = out.filename, dpi=300, height=4, width=6)
 
-
 # Add distance ------------------------------------------------------------
 
 ## data
-load(file = "output_data/00_bio_Q_matched_groups.RData")
-head(bioMeanQ_longx)
+# load(file = "output_data/00_bio_Q_matched_groups.RData")
+# head(bioMeanQ_longx)
 
 ## upload distance and format
 distance <- read.csv("input_data/dist_matrix_New_V2.csv") %>%
@@ -509,10 +508,150 @@ distance <- read.csv("input_data/dist_matrix_New_V2.csv") %>%
   rename(DistToSJC002 = SJC.002)
 head(distance)
 
-sum(unique(bioMeanQ_longx$PlantID) %in% unique(distance$PlantID2))
+# sum(unique(bioMeanQ_longx$PlantID) %in% unique(distance$PlantID2))
 
 ## join data with distances
-bioMeanQ_long_dist <- full_join(bioMeanQ_longx2, distance, by = c("PlantID" = "PlantID2"))
+bioMeanQ_long_dist <- full_join(allData, distance, by = c("PlantID" = "PlantID2"))
+
+## save out
+save(bioMeanQ_long_dist, file = "output_data/00_bio_Q_matched_groups_distance_orig.RData")
+
+# Get proportional values for sensitivity analysis ------------------------
+
+
+## calculate proportional values of outfall discharge, just group 5 for main outfalls, WN001/2 groups separate
+
+proQ <- bioMeanQ_longx2 %>%
+  filter(!GroupQ == "G5") #%>% ## remove group 5, we're calculating these values
+  select(Year, Month, Season, SJC002_POM001Combined:SJC_002) %>% ## remove unwanted columns
+  pivot_longer(SJC002_POM001Combined:SJC_002, names_to = "SourceOF", values_to = "QOF") %>% ## make longer
+  # filter(!GroupQ == "G5") %>% ## remove group 5, we're calculating these values
+  group_by(Year, Month, Season, SourceOF) %>% ## group to get values per month etc
+  mutate(QPro1 = QOF/100,  ## proportions 1%
+         QPro2 = QOF/50, # 2%
+         QPro5 = QOF/20, # 5%
+         QPro10 = QOF/10, # 10%
+         QPro20 = QOF/5) %>% # 20%
+  distinct() %>%
+  pivot_longer(QOF:QPro20, names_to = "Proportion", values_to = "ProQ") %>%
+  pivot_wider(names_from = SourceOF, values_from = ProQ) %>%
+  mutate(Group = "G5")
+
+  head(proQ)
+
+## calculate proportional Q to G1,2,3,5 for WN001/2
+  head(proQ2)
+  proQ2 <- bioMeanQ_longx2 %>%
+    filter(GroupQ == "G4") %>% ## remove group 5, we're calculating these values
+    select(Year, Month, Season, Group, WN001,  WN002) %>% ## remove unwanted columns
+    pivot_longer( WN001:WN002, names_to = "SourceOF", values_to = "QOF") %>% ## make longer
+    # filter(!GroupQ == "G5") %>% ## remove group 5, we're calculating these values
+    group_by(Year, Month, Season, SourceOF) %>% ## group to get values per month etc
+    mutate(QPro1 = QOF/100,  ## proportions 1%
+           QPro2 = QOF/50, # 2%
+           QPro5 = QOF/20, # 5%
+           QPro10 = QOF/10, # 10%
+           QPro20 = QOF/5) %>% # 20%
+    distinct() %>%
+    pivot_longer(QOF:QPro20, names_to = "Proportion", values_to = "ProQ") %>%
+    pivot_wider(names_from = SourceOF, values_from = ProQ) %>%
+    mutate(Group = "G5")
+  
+  ## 
+  
+
+## join ALL GROUP 5 DATA together
+proQx <- full_join(proQ, proQ2, by = c("Year", "Month", "Season", "Group", "Proportion"))
+
+head(proQx)
+
+## make wider to add in orignial values
+proQx1 <- proQx %>%
+  pivot_longer(c(SJC002_POM001Combined:SJC_002, WN001,WN002), names_to = "SourceOF", values_to = "QOF") %>%
+  pivot_wider(names_from = Proportion, values_from = QOF)
+
+## this is ALL group 5 values - QOF needs to be removed
+head(proQx1)
+
+## now need WN001/2 values from above dataset to add to G1,2,3
+
+
+# proQg1 <- proQ2 %>% mutate(Group = "G1")
+# proQg2 <- proQ2 %>% mutate(Group = "G2")
+# proQg3 <- proQ2 %>% mutate(Group = "G3")
+# 
+# ## join together
+# proQ123 <- bind_rows(proQg1, proQg2, proQg3) %>%
+#   pivot_longer(c(WN001,WN002), names_to = "SourceOF", values_to = "QOF") %>%
+#   pivot_wider(names_from = Proportion, values_from = QOF)
+
+# head(proQ123)
+
+## adding original values for groups 1,2,3
+## no WN should go to groups 1,2,3, should be 0 flow
+
+gr123 <- bioMeanQ_longx2 %>%
+  select(Year, Month, Season, Group, SJC002_POM001Combined:WN002) %>% ## only outfall Q with orignial values
+  distinct() %>%
+  filter(Group %in% c("G1", "G2", "G3")) %>% ## only groups 1:3
+  mutate(WN001 = 0, WN002 = 0) %>% ## change all WN values to 0 
+  pivot_longer(c(SJC002_POM001Combined:WN002), names_to = "SourceOF", values_to = "QOF") %>% ## make longer to match other data
+  mutate(QPro1 = QOF, QPro2 = QOF, QPro5 = QOF, QPro10 = QOF, QPro20 = QOF) ## add in columns of proportion - should repeat values
+
+head(gr123) ## this is ALL values for groups 1,2,3 - QOF needs to be removed
+
+
+## group 4 is all orignial values - format as others and add
+
+gr4 <- bioMeanQ_longx2 %>%
+  select(Year, Month, Season, Group, SJC002_POM001Combined:SJC_002, WN001,WN002) %>% ## only outfall Q with orignial values
+  distinct() %>%
+  filter(Group == "G4") %>% ## only groups 4
+  pivot_longer(c(SJC002_POM001Combined:SJC_002, WN001,WN002), names_to = "SourceOF", values_to = "QOF") %>% ## make longer to match other data
+  mutate(QPro1 = QOF, QPro2 = QOF, QPro5 = QOF, QPro10 = QOF, QPro20 = QOF) ## add in columns of proportion - should repeat values
+
+
+## join all groups together
+
+allGrps <- bind_rows(gr123, proQx1, gr4) %>%
+  # select(-QOF) %>% ## remove QOF
+  pivot_longer(QOF:QPro20, names_to = "Proportion", values_to = "Q") %>%
+  distinct() %>%
+  pivot_wider(names_from = SourceOF, values_from = Q)
+
+names(allGrps)
+
+### add back to main DF
+head(bioMeanQ_longx2)
+
+others <- bioMeanQ_longx2 %>%
+  select(-c(SJC002_POM001Combined:WN002))
+
+names(others)
+
+## join main data with new proportional Q data
+allData <- full_join(others, allGrps, by = c("Year", "Season", "Group", "Month"))
+
+head(allData)
+
+# Add distance ------------------------------------------------------------
+
+## data
+# load(file = "output_data/00_bio_Q_matched_groups.RData")
+# head(bioMeanQ_longx)
+
+## upload distance and format
+distance <- read.csv("input_data/dist_matrix_New_V2.csv") %>%
+  select(X, SJC.002) %>% rename(PlantID = X) %>%
+  mutate(PlantID2 = gsub(" ", "-", PlantID)) %>%
+  select(-PlantID) %>%
+  rename(DistToSJC002 = SJC.002)
+head(distance)
+
+# sum(unique(bioMeanQ_longx$PlantID) %in% unique(distance$PlantID2))
+
+## join data with distances
+bioMeanQ_long_dist <- full_join(allData, distance, by = c("PlantID" = "PlantID2"))
 
 ## save out
 save(bioMeanQ_long_dist, file = "output_data/00_bio_Q_matched_groups_distance.RData")

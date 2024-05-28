@@ -115,7 +115,11 @@ head(rf.data.imputed)
 
 save(rf.data.imputed, file = "ignore/06_rf_data_imputed_CV_raw.RData")
 
-load(file = "ignore/06_rf_data_imputed_CV_raw.RData")
+load(file = "ignore/06_rf_data_imputed_CV_raw.RData") ## change WN to 0 for grps 1,2,3
+
+rf.data.imputed <- rf.data.imputed %>%
+  mutate(WN001 = case_when(Group %in% c("G1", "G2", "G3") ~ 0, .default = WN001),
+         WN002 = case_when(Group %in% c("G1", "G2", "G3") ~ 0, .default = WN002))
 
 # Random Forest Model -----------------------------------------------------
 
@@ -234,6 +238,12 @@ ImpMean <- ImpMean %>%
 
 ImpMean$VariableHuman <- factor(ImpMean$VariableHuman, levels=ImpMean[order(ImpMean$MeanImpPerc,decreasing=F),]$VariableHuman)
 ImpMean$VariableHuman
+
+## add mod peformance
+ImpMean <- ImpMean %>%
+  mutate(RFVarExpl = mean(rf$rsq))
+
+write.csv(ImpMean, "output_data/06_CV_var_imp.csv")
 
 ## plot
 i1 <- ggplot(ImpMean, aes(x=MeanImpPerc, y=VariableHuman)) +

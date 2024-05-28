@@ -87,34 +87,57 @@ mean(datacorcv$corQ) ## 0.03059078
 # Power analysis ----------------------------------------------------------
 example
 ## Q
-1152/113
 
-example=wp.correlation(n=seq(132,132*15,132), r=-0.33, alternative = "two.sided") 
-df<-as.data.frame(matrix(ncol = 4, nrow=15))
+## define empty df
+dfx <- NULL
 
-df
-colnames(df) <- c("nobvs", "r", "alpha", "Power")
-df[,1] <- example$n
-df[,2] <- example$r
-df[,3] <- example$alpha
-df[,4] <- example$power
+## pvals to loop through
+pvals <- c(0.05,0.1,0.15, 0.2, 0.25, 0.3)
 
-# x <- rep(c("Spring", "Fall"),times=10)
-x1 <- seq(2023, 2037, 1)
-x1
-# df$Season <- x
-df$Year <- as.factor(x1)
+p=1
 
-df
+for (p in 1:length(pvals)) {
+  
+  example=wp.correlation(n=seq(132,132*15,132), r=-0.33, alpha = pvals[p], alternative = "two.sided") 
+  df<-as.data.frame(matrix(ncol = 4, nrow=15))
+  
+  colnames(df) <- c("nobvs", "r", "alpha", "Power")
+  df[,1] <- example$n
+  df[,2] <- example$r
+  df[,3] <- example$alpha
+  df[,4] <- example$power
+  
+  # x <- rep(c("Spring", "Fall"),times=10)
+  x1 <- seq(2023, 2037, 1)
+  x1
+  # df$Season <- x
+  df$Year <- as.factor(x1)
+  
+  df
+  
+  df$Stressor <- "SWP"
+  
+  dfx <- bind_rows(dfx, df)
+  
+}
 
-df$Stressor <- "SWP"
-67*3
+head(dfx)
+
+write.csv(dfx, "output_data/03b_pvals_sens_swp_power_analysis")
+
+
 
 ## CV
-examplecv=wp.correlation(n=seq(132,132*15,132), r=-0.067, alternative = "two.sided") 
+
+## define empty df
+dfxCV <- NULL
+
+for (p in 1:length(pvals)) {
+
+examplecv=wp.correlation(n=seq(132,132*15,132), r=-0.067,alpha = pvals[p], alternative = "two.sided") 
 dfcv<-as.data.frame(matrix(ncol = 4, nrow=15))
 
-dfcv
+
 colnames(dfcv) <- c("nobvs", "r", "alpha", "Power")
 dfcv[,1] <- examplecv$n
 dfcv[,2] <- examplecv$r
@@ -129,8 +152,18 @@ dfcv$Year <- as.factor(x1cv)
 
 dfcv$Stressor <- "CV"
 
-alldf <- bind_rows(df,dfcv)
+dfxCV <- bind_rows(dfxCV, dfcv)
+
+}
+
+write.csv(dfxCV, "output_data/03b_pvals_sens_CV_power_analysis")
+
+
+alldf <- bind_rows(dfx,dfxCV)
 alldf
+
+alldf <- alldf %>%
+  filter(alpha == 0.05)
 
 p1 <- ggplot(alldf, aes(x=Year, y = Power, group = Stressor, col = Stressor)) +
   geom_point(aes(group = Stressor, col = Stressor)) +
@@ -143,7 +176,7 @@ p1 <- ggplot(alldf, aes(x=Year, y = Power, group = Stressor, col = Stressor)) +
 
 p1
 
-file.name1 <- "Figures/03b_SWP_CV_power_analysis_CombQ.jpg"
+file.name1 <- "Figures/03b_SWP_CV_power_analysis_CombQ_sensitivity.jpg"
 ggsave(p1, filename=file.name1, dpi=600, height=5, width=8)
 
 ## double the frequencey

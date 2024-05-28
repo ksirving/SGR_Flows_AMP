@@ -37,6 +37,7 @@ bioMeanQ_long_distx <- bioMeanQ_long_dist %>%
   group_by(PlantID) %>%
   select(PlantID:Year, SWP , Replacement, Damage) %>%
   distinct()
+
 bioMeanQ_long_distx
 
 ## if damage then plantid for remaining surveys should be also damaged
@@ -113,8 +114,13 @@ dim(rf.data.imputed)
 
 save(rf.data.imputed, file = "ignore/05_rf_data_imputed_SWP_raw.RData")
 
-load(file = "ignore/05_rf_data_imputed_SWP_raw.RData")
+load(file = "ignore/05_rf_data_imputed_SWP_raw.RData") #### change WN to 0 for grps 1,2,3
 
+head(rf.data.imputed)
+
+rf.data.imputed <- rf.data.imputed %>%
+  mutate(WN001 = case_when(Group %in% c("G1", "G2", "G3") ~ 0, .default = WN001),
+         WN002 = case_when(Group %in% c("G1", "G2", "G3") ~ 0, .default = WN002))
 
 # Random Forest Model -----------------------------------------------------
 
@@ -166,6 +172,8 @@ mean(rf$rsq) ## 0.92
 rf
 
 ## save final reduced model
+
+# save(rf, file = "models/05_SWP_final_rf_Raw_updated.RData")
 
 save(rf, file = "models/05_SWP_final_rf_Raw.RData")
 
@@ -235,7 +243,11 @@ ImpMean <- ImpMean %>%
 ## order in increasing values
 
 ImpMean$VariableHuman <- factor(ImpMean$VariableHuman, levels=ImpMean[order(ImpMean$MeanImpPerc,decreasing=F),]$VariableHuman)
-ImpMean$VariableHuman
+## add mod peformance
+ImpMean <- ImpMean %>%
+  mutate(RFVarExpl = mean(rf$rsq))
+
+write.csv(ImpMean, "output_data/05_SWP_var_imp.csv")
 
 ## plot
 i1 <- ggplot(ImpMean, aes(x=MeanImpPerc, y=VariableHuman)) +
@@ -315,18 +327,18 @@ hist(dataall$SWP)
 ## get baseline values
 names(dataall)
 
-## baseline data years
+## baseline data years - dry years only
 basedata <- dataall %>%
-  filter(Year %in% c(2018, 2019, 2020))
+  filter(Year %in% c(2020))
 basedata
 
-median(basedata$SWP) ## 9
+median(basedata$SWP) ## 8.75
 median(basedata$SJC002_POM001Combined) ## mean - 11.63, median 6.5
 
 ## means per year
 
 currentdata <- dataall %>%
-  filter(!Year %in% c(2018, 2019, 2020))
+  filter(Year %in% c(2021, 2022))
 
 median(currentdata$SWP) ## 8.5
 median(currentdata$SJC002_POM001Combined) ## median - 9.12
@@ -368,8 +380,8 @@ deltaDat <- full_join(basedatax, currentdatax, by = "Month") %>%
 ## Baseline
 deltaDat %>% group_by(Season) %>% filter(Type == "Baseline") %>% summarise(med = median(CombQ)) 
 
-# 1 Fall    3.93
-# 2 Spring 23.8
+# 1 Fall    7.3
+# 2 Spring 24.1
 
 # Current
 deltaDat %>% group_by(Season) %>% filter(Type == "Current") %>% summarise(med = median(CombQ)) 
@@ -407,6 +419,7 @@ currentdataSWP <- currentdata %>%
 
 
 currentdataSWP
+unique(currentdataSWP$Year)
 
 ## join together
 ## fall = 5,6,7,8,9, 10
@@ -432,23 +445,18 @@ AllDeltaDat <- inner_join(deltaDatSWP, deltaDat, by = c("PlantID", "Species", "S
 names(AllDeltaDat)
 
 
-# 
-# test <- AllDeltaDat %>%
-#   filter(Type == "Delta") %>%
-#   drop_na(SWP)
-
 
 ## plot only delta, by species
 
 p1 <- ggplot(data = subset(AllDeltaDat, Type == "Delta"), aes(x = CombQ, y = SWP, group = Species, colour = Species)) +
   geom_smooth()  +
-  facet_wrap(~Season, scale = "free_x") +
+  facet_grid(cols = vars(Season), rows = vars(Year), scale = "free_x") +
   scale_x_continuous(name = "Delta Combined Q (MGD)") +
   scale_y_continuous(name = "Delta SWP")
 
 p1
 
-file.name1 <- "Figures/05_delta_SWP_combq_by_species.jpg"
+file.name1 <- "Figures/05_delta_SWP_combq_by_species_dry_years.jpg"
 ggsave(p1, filename=file.name1, dpi=300, height=5, width=8)
 
 ## plot delta by year
@@ -461,7 +469,7 @@ p2 <- ggplot(data = subset(AllDeltaDat, Type == "Delta"), aes(x = CombQ, y = SWP
 
 p2
 
-file.name1 <- "Figures/05_delta_SWP_combq_by_year.jpg"
+file.name1 <- "Figures/05_delta_SWP_combq_by_year_dry_years.jpg"
 ggsave(p2, filename=file.name1, dpi=300, height=5, width=8)
 
 ## plot delta all data
@@ -503,8 +511,10 @@ binData <- AllDeltaDat %>%
 
 ## empty DFs
 
-df <- data.frame(matrix(ncol = 4)) 
-names(df) <- c("Species", "AIC", "Pval", "McFadsR2")
+df <- data.frame(matrix(ncol = 6)) 
+names(df) <- c("Species","Year",  "AIC", "Pval", "McFadsR2", "n")
+dfx <- NULL
+
 spDataPx <- NULL
 ## loop over species
 s=1
@@ -512,100 +522,158 @@ s=1
 species <- unique(binData$Species)
 
 species
+
+## define years
+
+years <- unique(binData$Year)
+
+years
 ## 95% confidence intervals
 critval <- 1.96 ## approx 95% CI
 
 ## start loop
 s = 2
-for(s in 1:length(species)) {
+y=1
+
+for(y in 1:length(years)) {
   
   spData <- binData %>%
+    filter(Year == years[y])
+  
+for(s in 1:length(species)) {
+  
+  spDatax <- spData %>%
     filter(Species == species[s])
   
-  mod <- glm(Stress~CombQ, family=binomial(link="logit"), data = spData)
-  ## summary
-  modsum <- summary(mod)
-  ## get vals into df
-  df[s,1] <- paste(species[s])
-  df[s,2] <- mod$aic
-  df[s,3] <- modsum$coefficients[8]
-  df[s,4] <- 1-modsum$deviance/modsum$null.deviance ## 0.06
+    mod <- glm(Stress~CombQ, family=binomial(link="logit"), data = spDatax)
+    ## summary
+    modsum <- summary(mod)
+    ## get vals into df
+    
+    df[s,1] <- paste(species[s])
+    df[s,2] <- paste(years[y])
+    df[s,3] <- mod$aic
+    df[s,4] <- modsum$coefficients[8]
+    df[s,5] <- 1-modsum$deviance/modsum$null.deviance ## 
+    df[s,6] <- length(spDatax$SWP)
+    
+    ## predict glm
+    preds <- as.data.frame(predict.glm(mod, type = "response", se.fit = T)) %>%
+      rename(ProbabilityOfStress = 1) %>%
+      mutate(upr = ProbabilityOfStress + (critval * se.fit),
+             lwr = ProbabilityOfStress - (critval * se.fit)) 
+    
+    ## join with data
+    
+    spDataP <- cbind(spDatax, preds)
+    
+    ## accumulate DF
+    spDataPx <- rbind(spDataPx, spDataP)
+    
+      }
   
-  ## predict glm
-  preds <- as.data.frame(predict.glm(mod, type = "response", se.fit = T)) %>%
-    rename(ProbabilityOfStress = 1) %>%
-    mutate(upr = ProbabilityOfStress + (critval * se.fit),
-           lwr = ProbabilityOfStress - (critval * se.fit)) 
+  dfx <- rbind(dfx, df)
   
-  ## join with data
+  }
   
-  spDataP <- cbind(spData, preds)
-  
-  ## accumulate DF
-  spDataPx <- rbind(spDataPx, spDataP)
-  
-}
 
-head(df)
+
+head(dfx)
+dfx
 head(spDataPx)
 
-write.csv(df, "output_data/05_SWP_pred_stress_per_species.csv")
+write.csv(dfx, "output_data/05_SWP_pred_stress_per_species_dry_years.csv")
 
 ## plot
 
 s1 <- ggplot(spDataPx, aes(x = CombQ, y = ProbabilityOfStress, group = Species, colour = Species)) +
   geom_line()  +
-  # facet_wrap(~Season, scale = "free_x") +
+  facet_wrap(~Year, scale = "free_x") +
   geom_ribbon( aes(ymin = lwr, ymax = upr), alpha = .15) +
   scale_x_continuous(name = "Delta Combined Q (MGD)") +
   scale_y_continuous(name = "Probability of Stress")
 
 s1
 
-file.name1 <- "Figures/05_probability_of_stress_per_species.jpg"
+file.name1 <- "Figures/05_probability_of_stress_per_species_dry_years.jpg"
 ggsave(s1, filename=file.name1, dpi=300, height=5, width=8)
 
 
-## model altogether
-mod <- glm(Stress~CombQ, family=binomial(link="logit"), data = binData)
+## model altogether - dry years
+## 2021
+binData2021 <- binData %>%
+  filter(Year == 2021)
+
+mod2021 <- glm(Stress~CombQ, family=binomial(link="logit"), data = binData2021)
 ## summary
-modsum <- summary(mod)
+modsum <- summary(mod2021)
 ## get vals into df
-mod$aic
+mod2021$aic
 modsum$coefficients[8]
-1-modsum$deviance/modsum$null.deviance ## 0.09
+1-modsum$deviance/modsum$null.deviance ## 0.07
 
 ## predict glm
-preds <- as.data.frame(predict(mod, type = "response",  se.fit = TRUE)) %>%
+preds2021 <- as.data.frame(predict(mod2021, type = "response",  se.fit = TRUE)) %>%
   rename(ProbabilityOfStress = 1) %>% 
   ## confidence intervals
   mutate(upr = ProbabilityOfStress + (critval * se.fit),
          lwr = ProbabilityOfStress - (critval * se.fit)) 
 
-head(preds)
+head(preds2021)
 
 ## join with data
 
-binDataP <- cbind(binData, preds)
+binData2021 <- cbind(binData2021, preds2021)
+
+## 2022
+binData2022 <- binData %>%
+  filter(Year == 2022)
+
+mod2022 <- glm(Stress~CombQ, family=binomial(link="logit"), data = binData2022)
+## summary
+modsum <- summary(mod2022)
+## get vals into df
+mod2022$aic
+modsum$coefficients[8]
+1-modsum$deviance/modsum$null.deviance ## 0.05
+
+## predict glm
+preds2022 <- as.data.frame(predict(mod2022, type = "response",  se.fit = TRUE)) %>%
+  rename(ProbabilityOfStress = 1) %>% 
+  ## confidence intervals
+  mutate(upr = ProbabilityOfStress + (critval * se.fit),
+         lwr = ProbabilityOfStress - (critval * se.fit)) 
+
+head(preds2022)
+
+## join with data
+
+binData2022 <- cbind(binData2022, preds2022)
+
+## join 2021/22 together
+binDataP <- rbind(binData2022, binData2021)
+
+binDataP
 
 ## plot
 
 s2 <- ggplot(binDataP, aes(x = CombQ, y = ProbabilityOfStress)) +
   geom_smooth()  +
   geom_ribbon( aes(ymin = lwr, ymax = upr), alpha = .15) +
-  # facet_wrap(~Season, scale = "free_x") +
+  facet_wrap(~Year, scale = "free_x") +
   scale_x_continuous(name = "Delta Combined Q (MGD)") +
   scale_y_continuous(name = "Probability of Stress")
 
 s2
 
-file.name1 <- "Figures/04_probability_of_stress_overall.jpg"
+file.name1 <- "Figures/04_probability_of_stress_overall_dry_years.jpg"
 ggsave(s2, filename=file.name1, dpi=300, height=5, width=8)
 
 ## plot with secondary axis to show observed Q values
 
 names(binDataP)
 names(binDataC)
+
 ## get current values of combined Q
 binDataC <- AllDeltaDat %>%
   filter(!Group == "G5") %>%
@@ -618,6 +686,7 @@ binDataC <- AllDeltaDat %>%
 # drop_na(SWPCurrent)
 
 binDataC
+
 ## join with predictions
 
 binDataA <- full_join(binDataC, binDataP, by = c("PlantID", "Species", "Group", "Month", "Year",   "Season", "DeltaQ" = "CombQ")) %>%
@@ -625,22 +694,22 @@ binDataA <- full_join(binDataC, binDataP, by = c("PlantID", "Species", "Group", 
 
 ## get multiplier for secondary axis
 
-min(binDataA$CurrentQ) -min(binDataA$DeltaQ) ## 22.9
+min(binDataA$CurrentQ) -min(binDataA$DeltaQ) ## 26.37
 
 ## plot with secondary axis
 
 s3 <- ggplot(binDataA, aes(x = CurrentQ, y = ProbabilityOfStress)) +
   geom_smooth()  +
   # geom_ribbon( aes(ymin = lwr, ymax = upr), alpha = .15) +
-  # facet_wrap(~Season, scale = "free_x") +
+  facet_wrap(~Year, scale = "free_x") +
   scale_x_continuous(name="Combined Q (MGD)") +
   # scale_x_continuous(sec.axis = ~. + 22.9, name="Combined Q (MGD)" )+
   scale_y_continuous(name = "Probability of Stress")
 
 s3
 
-file.name1 <- "Figures/05_probability_of_stress_overall_currentQ.jpg"
-ggsave(s2, filename=file.name1, dpi=300, height=5, width=8)
+file.name1 <- "Figures/05_probability_of_stress_overall_currentQ_dry_years.jpg"
+ggsave(s3, filename=file.name1, dpi=300, height=5, width=8)
 
 ## delta doesn't go hand in hand with current Q
 binDataA %>% group_by(Group) %>% summarise(MeanBLQ = mean(BaselineQ))
@@ -696,13 +765,13 @@ s3 <- ggplot(binDataP, aes(x = CombQ, y = ProbabilityOfStress)) +
   geom_vline(xintercept = 0, col = "gray30", lty = "dashed") +
   geom_vline(xintercept = 5, col = "forestgreen", lty = "dashed") + ## fall line
   geom_vline(xintercept = -12, col = "forestgreen", lty = "dashed") + ## spring line
-  # facet_wrap(~Season, scale = "free_x") +
+  facet_wrap(~Year, scale = "free_x") +
   scale_x_continuous(name = "Delta Combined Q (MGD)") +
   scale_y_continuous(name = "Probability of Stress (SWP)")
 
 s3
 
-file.name1 <- "Figures/05_probability_of_stress_overall_current_delta_range.jpg"
+file.name1 <- "Figures/05_probability_of_stress_overall_current_delta_range_dry_years.jpg"
 ggsave(s3, filename=file.name1, dpi=300, height=5, width=8)
 
 
