@@ -5,7 +5,7 @@ library(tidylog)
 library(lubridate)
 
 ## random forest
-library(rfUtilities)
+# library(rfUtilities)
 library(randomForest)
 library(ks)
 library(sm)
@@ -107,6 +107,11 @@ b=10001
 
 sp=0.6 ## for dependence plots
 
+head(rf.data)
+which(is.na(rf.data$WN002))
+sum(is.na(rf.data))
+colSums(is.na(rf.data))
+
 ## impute missing values
 rf.data.imputed <- rfImpute(SWP ~., rf.data)
 head(rf.data.imputed)
@@ -142,8 +147,6 @@ mean(rf$rsq) ## 0.90
 ## importance
 varImpPlot(rf)
 importance(rf, type = 1) ## season
-
-
 
 # Remove negative importance variables ------------------------------------
 
@@ -310,7 +313,8 @@ partialPlot(rf, rf.data.val, Damage2)
 dev.off()
 
 
-# Probability of increase in SWP ------------------------------------------
+# Probability of increase in SWP: Dry Years------------------------------------------
+
 load(file = "ignore/05_rf_data_imputed_SWP_raw.RData")
 load(file = "ignore/05_plantids.RData")
 
@@ -444,8 +448,6 @@ AllDeltaDat <- inner_join(deltaDatSWP, deltaDat, by = c("PlantID", "Species", "S
 
 names(AllDeltaDat)
 
-
-
 ## plot only delta, by species
 
 p1 <- ggplot(data = subset(AllDeltaDat, Type == "Delta"), aes(x = CombQ, y = SWP, group = Species, colour = Species)) +
@@ -476,7 +478,7 @@ ggsave(p2, filename=file.name1, dpi=300, height=5, width=8)
 
 p3 <- ggplot(data = subset(AllDeltaDat, Type == "Delta"), aes(x = CombQ, y = SWP)) +
   geom_smooth()  +
-  facet_wrap(~Season, scale = "free_x") +
+  # facet_wrap(~Season, scale = "free_x") +
   scale_x_continuous(name = "Delta Combined Q (MGD)") +
   scale_y_continuous(name = "Delta SWP")
 
@@ -487,9 +489,220 @@ ggsave(p3, filename=file.name1, dpi=300, height=5, width=8)
 
 ## save delta data
 
-save(AllDeltaDat, file = "ignore/06_delta_SWP.Rdata")
+save(AllDeltaDat, file = "ignore/05_delta_SWP.Rdata")
 
-# Delta models ------------------------------------------------------------
+
+# Delta Models: Overall ---------------------------------------------------
+
+binData <- AllDeltaDat %>%
+  filter(Type == "Delta", !Group == "G5") %>%
+  mutate(Stress = ifelse(SWP > 0,1,0)) %>%
+  select(PlantID, Species, Group, Month, Year, SWP, CombQ, Stress, Season) %>%
+  # mutate(Species = as.character(Species)) %>%
+  drop_na(SWP)
+
+## find NAs
+# ind <- which(is.na(binData$SWP))
+# binData[ind,] ## where tree has been replaced between baseline and current, can remove
+
+## empty DFs
+
+df <- data.frame(matrix(ncol = 4)) 
+names(df) <- c("Species", "AIC", "Pval", "McFadsR2")
+spDataPx <- NULL
+## loop over species
+s=1
+## define species
+species <- unique(binData$Species)
+
+species
+## 95% confidence intervals
+critval <- 1.96 ## approx 95% CI
+
+## start loop
+s = 2
+for(s in 1:length(species)) {
+  
+  spData <- binData %>%
+    filter(Species == species[s])
+  
+  mod <- glm(Stress~CombQ, family=binomial(link="logit"), data = spData)
+  ## summary
+  modsum <- summary(mod)
+  ## get vals into df
+  df[s,1] <- paste(species[s])
+  df[s,2] <- mod$aic
+  df[s,3] <- modsum$coefficients[8]
+  df[s,4] <- 1-modsum$deviance/modsum$null.deviance ## 0.06
+  
+  ## predict glm
+  preds <- as.data.frame(predict.glm(mod, type = "response", se.fit = T)) %>%
+    rename(ProbabilityOfStress = 1) %>%
+    mutate(upr = ProbabilityOfStress + (critval * se.fit),
+           lwr = ProbabilityOfStress - (critval * se.fit)) 
+  
+  ## join with data
+  
+  spDataP <- cbind(spData, preds)
+  
+  ## accumulate DF
+  spDataPx <- rbind(spDataPx, spDataP)
+  
+}
+
+head(df)
+head(spDataPx)
+
+## plot
+
+s1 <- ggplot(spDataPx, aes(x = CombQ, y = ProbabilityOfStress, group = Species, colour = Species)) +
+  geom_line()  +
+  # facet_wrap(~Season, scale = "free_x") +
+  geom_ribbon( aes(ymin = lwr, ymax = upr), alpha = .15) +
+  scale_x_continuous(name = "Delta Combined Q (MGD)") +
+  scale_y_continuous(name = "Probability of Stress")
+
+s1
+
+file.name1 <- "Figures/05_probability_of_stress_per_species.jpg"
+ggsave(s1, filename=file.name1, dpi=300, height=5, width=8)
+
+
+## model altogether
+mod <- glm(Stress~CombQ, family=binomial(link="logit"), data = binData)
+## summary
+modsum <- summary(mod)
+## get vals into df
+mod$aic
+modsum$coefficients[8]
+1-modsum$deviance/modsum$null.deviance ## 0.09
+
+## predict glm
+preds <- as.data.frame(predict(mod, type = "response",  se.fit = TRUE)) %>%
+  rename(ProbabilityOfStress = 1) %>% 
+  ## confidence intervals
+  mutate(upr = ProbabilityOfStress + (critval * se.fit),
+         lwr = ProbabilityOfStress - (critval * se.fit)) 
+
+head(preds)
+
+## join with data
+
+binDataP <- cbind(binData, preds)
+
+## plot
+
+s2 <- ggplot(binDataP, aes(x = CombQ, y = ProbabilityOfStress)) +
+  geom_smooth()  +
+  geom_ribbon( aes(ymin = lwr, ymax = upr), alpha = .15) +
+  # facet_wrap(~Season, scale = "free_x") +
+  scale_x_continuous(name = "Delta Combined Q (MGD)") +
+  scale_y_continuous(name = "Probability of Stress")
+
+s2
+
+file.name1 <- "Figures/05_probability_of_stress_overall.jpg"
+ggsave(s2, filename=file.name1, dpi=300, height=5, width=8)
+
+## plot with secondary axis to show observed Q values
+
+names(binDataP)
+names(binDataC)
+## get current values of combined Q
+binDataC <- AllDeltaDat %>%
+  filter(!Group == "G5") %>%
+  # mutate(TypeQ = Type) %>%
+  select(PlantID, Species, Group, Month, Year, Season, Type, CombQ) %>%
+  distinct() %>%
+  pivot_wider(names_from = "Type", values_from = "CombQ") %>%
+  rename(BaselineQ = Baseline, CurrentQ = Current, DeltaQ = Delta) #%>%
+# mutate(Species = as.character(Species)) %>%
+# drop_na(SWPCurrent)
+
+binDataC
+## join with predictions
+
+binDataA <- full_join(binDataC, binDataP, by = c("PlantID", "Species", "Group", "Month", "Year",   "Season", "DeltaQ" = "CombQ")) %>%
+  drop_na(SWP)
+
+## get multiplier for secondary axis
+
+min(binDataA$CurrentQ) -min(binDataA$DeltaQ) ## 22.9
+
+## plot with secondary axis
+
+s3 <- ggplot(binDataA, aes(x = CurrentQ, y = ProbabilityOfStress)) +
+  geom_smooth()  +
+  # geom_ribbon( aes(ymin = lwr, ymax = upr), alpha = .15) +
+  # facet_wrap(~Season, scale = "free_x") +
+  scale_x_continuous(name="Combined Q (MGD)") +
+  # scale_x_continuous(sec.axis = ~. + 22.9, name="Combined Q (MGD)" )+
+  scale_y_continuous(name = "Probability of Stress")
+
+s3
+
+file.name1 <- "Figures/05_probability_of_stress_overall_currentQ.jpg"
+ggsave(s3, filename=file.name1, dpi=300, height=5, width=8)
+
+## delta doesn't go hand in hand with current Q
+binDataA %>% group_by(Group) %>% summarise(MeanBLQ = mean(BaselineQ))
+##12-13
+
+binDataA %>% group_by(Group) %>% summarise(MeanBLQ = mean(CurrentQ))
+## 10-11
+
+# mean delta of ~ 2-3
+
+newd <- data.frame(CombQ=seq(-5,-2, 0.5))
+
+pnewd <- as.data.frame(predict(mod, newdata = newd, type = "response"))
+
+dnew <- cbind(newd, pnewd)
+
+dnew
+
+write.csv(dnew, "output_data/05_predicted_probs_current_delta.csv")
+
+## plot with current delta ranges -2:-3
+
+## col blind pallette
+cols <- palette.colors()
+
+
+s3 <- ggplot(binDataP, aes(x = CombQ, y = ProbabilityOfStress)) +
+  geom_smooth(aes(colour = cols[c(3)]))  +
+  geom_ribbon(aes(colour = cols[c(3)], ymin = lwr, ymax = upr), alpha = .15) +
+  scale_fill_manual(values = cols[c(3)]) +
+  scale_colour_manual(values = cols[c(3)]) +
+  annotate("rect", xmin = 2, xmax = 2.5, ymin = -Inf, ymax = Inf,
+           alpha = .2, fill=cols[7]) +
+  geom_text(aes(x=0, label="Baseline Discharge", y=0.75), colour=cols[9], angle=90, vjust = 1.3, size=6)+
+  geom_text(aes(x=2.5, label="Current Discharge Range", y=0.75), colour=cols[7], angle=90, vjust = 1.3, size=6)+
+  geom_text(aes(x=5, label="Fall Current Discharge", y=0.75), colour=cols[4], angle=90, vjust = 1.3, size=6)+
+  geom_text(aes(x=-12, label="Spring Current Discharge", y=0.75), colour=cols[4], angle=90, vjust = 1.3, size=6)+
+  geom_vline(xintercept = 0, col = cols[9], lty = "dashed") +
+  geom_vline(xintercept = 5, col = cols[4], lty = "dashed") + ## fall line
+  geom_vline(xintercept = -12, col = cols[4], lty = "dashed") + ## spring line
+  # facet_wrap(~Year, scale = "free_x") +
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.title.x = element_text(size = 20),
+        axis.title.y = element_text(size = 20),
+        axis.text = element_text(size = 20)) +
+  scale_x_continuous(name = "Delta Combined Q (MGD)") +
+  scale_y_continuous(name = "Probability of Stress (SWP)")
+
+s3
+
+file.name1 <- "Figures/05_probability_of_stress_overall_current_delta_range.jpg"
+ggsave(s3, filename=file.name1, dpi=300, height=10, width=15)
+
+## change name of df and add type of data
+
+binDataOverall <- binDataP %>%
+  mutate(Type = "Overall")
+
+# Delta models: dry Years ------------------------------------------------------------
 
 ## we want probability of any increase in SWP 
 
@@ -666,7 +879,7 @@ s2 <- ggplot(binDataP, aes(x = CombQ, y = ProbabilityOfStress)) +
 
 s2
 
-file.name1 <- "Figures/04_probability_of_stress_overall_dry_years.jpg"
+file.name1 <- "Figures/05_probability_of_stress_overall_dry_years.jpg"
 ggsave(s2, filename=file.name1, dpi=300, height=5, width=8)
 
 ## plot with secondary axis to show observed Q values
@@ -753,27 +966,73 @@ write.csv(dnew, "output_data/05_predicted_probs_current_delta.csv")
 
 ## plot with current delta ranges -2:-3
 
+## col blind pallette
+cols <- palette.colors()
+
 s3 <- ggplot(binDataP, aes(x = CombQ, y = ProbabilityOfStress)) +
-  geom_smooth()  +
-  geom_ribbon( aes(ymin = lwr, ymax = upr), alpha = .15) +
+  geom_smooth(aes(col = Year, fill = Year))  +
+  geom_ribbon( aes(col = Year, fill = Year,ymin = lwr, ymax = upr), alpha = .15) +
+  scale_fill_manual(values = cols[c(3,8)]) +
+  scale_colour_manual(values = cols[c(3,8)]) +
   annotate("rect", xmin = 2, xmax = 2.5, ymin = -Inf, ymax = Inf,
-           alpha = .2, fill='red') +
-  geom_text(aes(x=0, label="Baseline Discharge", y=0.70), colour="gray30", angle=90, vjust = 1.3, size=4)+
-  geom_text(aes(x=2.5, label="Current Discharge Range", y=0.70), colour="red", angle=90, vjust = 1.3, size=4)+
-  geom_text(aes(x=5, label="Fall Current Discharge", y=0.70), colour="forestgreen", angle=90, vjust = 1.3, size=4)+
-  geom_text(aes(x=-12, label="Spring Current Discharge", y=0.70), colour="forestgreen", angle=90, vjust = 1.3, size=4)+
-  geom_vline(xintercept = 0, col = "gray30", lty = "dashed") +
-  geom_vline(xintercept = 5, col = "forestgreen", lty = "dashed") + ## fall line
-  geom_vline(xintercept = -12, col = "forestgreen", lty = "dashed") + ## spring line
-  facet_wrap(~Year, scale = "free_x") +
+           alpha = .2, fill=cols[7]) +
+  geom_text(aes(x=0, label="Baseline Discharge", y=0.80), colour=cols[9], angle=90, vjust = 1.3, size=6)+
+  geom_text(aes(x=2.5, label="Current Discharge Range", y=0.80), colour=cols[7], angle=90, vjust = 1.3, size=6)+
+  geom_text(aes(x=5, label="Fall Current Discharge", y=0.80), colour=cols[4], angle=90, vjust = 1.3, size=6)+
+  geom_text(aes(x=-12, label="Spring Current Discharge", y=0.80), colour=cols[4], angle=90, vjust = 1.3, size=6)+
+  geom_vline(xintercept = 0, col = cols[9], lty = "dashed") +
+  geom_vline(xintercept = 5, col = cols[4], lty = "dashed") + ## fall line
+  geom_vline(xintercept = -12, col = cols[4], lty = "dashed") + ## spring line
+  # facet_wrap(~Year, scale = "free_x") +
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.title.x = element_text(size = 20),
+        axis.title.y = element_text(size = 20),
+        axis.text = element_text(size = 20)) +
   scale_x_continuous(name = "Delta Combined Q (MGD)") +
   scale_y_continuous(name = "Probability of Stress (SWP)")
 
 s3
 
 file.name1 <- "Figures/05_probability_of_stress_overall_current_delta_range_dry_years.jpg"
-ggsave(s3, filename=file.name1, dpi=300, height=5, width=8)
+ggsave(s3, filename=file.name1, dpi=300, height=10, width=15)
 
+binDataDry <- binDataP %>%
+  mutate(Type = ifelse(Year == 2021, "Dry Year: 2021", "Dry Year: 2022"))
+
+## join overall and dry years together
+
+binData <- bind_rows(binDataDry, binDataOverall)
+head(binData)
+
+## plot all data on one plot
+
+s4 <- ggplot(binData, aes(x = CombQ, y = ProbabilityOfStress)) +
+  geom_smooth(aes(col = Type, fill = Type))  +
+  geom_ribbon( aes(col = Type, fill = Type,ymin = lwr, ymax = upr), alpha = .15) +
+  scale_fill_manual(values = cols[c(3,5, 8)]) +
+  scale_colour_manual(values = cols[c(3,5, 8)]) +
+  annotate("rect", xmin = 2, xmax = 2.5, ymin = -Inf, ymax = Inf,
+           alpha = .2, fill=cols[7]) +
+  geom_text(aes(x=0, label="Baseline Discharge", y=0.80), colour=cols[9], angle=90, vjust = 1.3, size=6)+
+  geom_text(aes(x=2.5, label="Current Discharge Range", y=0.80), colour=cols[7], angle=90, vjust = 1.3, size=6)+
+  geom_text(aes(x=5, label="Fall Current Discharge", y=0.80), colour=cols[4], angle=90, vjust = 1.3, size=6)+
+  geom_text(aes(x=-12, label="Spring Current Discharge", y=0.80), colour=cols[4], angle=90, vjust = 1.3, size=6)+
+  geom_vline(xintercept = 0, col = cols[9], lty = "dashed") +
+  geom_vline(xintercept = 5, col = cols[4], lty = "dashed") + ## fall line
+  geom_vline(xintercept = -12, col = cols[4], lty = "dashed") + ## spring line
+  # facet_wrap(~Year, scale = "free_x") +
+  theme_classic()+
+  theme(axis.title.x = element_text(size = 20),
+        axis.title.y = element_text(size = 20),
+        axis.text = element_text(size = 20)) +
+  scale_x_continuous(name = "Delta Combined Q (MGD)") +
+  scale_y_continuous(name = "Probability of Stress (SWP)")
+
+s4
+
+file.name1 <- "Figures/05_probability_of_stress_overall_current_delta_range_ALL.jpg"
+ggsave(s4, filename=file.name1, dpi=300, height=10, width=15)
 
 # Mixed Model -------------------------------------------------------------
 

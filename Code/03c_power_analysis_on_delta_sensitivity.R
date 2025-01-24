@@ -8,7 +8,7 @@ library(pwr)
 library(WebPower)
 library(tidyverse)
 library(tidylog)
-library(rfUtilities)
+# library(rfUtilities)
 library(randomForest)
 
 
@@ -26,7 +26,7 @@ AllDeltaDatswp <- AllDeltaDat %>%
   drop_na(SWP)
 
 
-load(file = "ignore/06_delta_CV.Rdata") ## swp
+load(file = "ignore/06_delta_CV.Rdata") 
 head(AllDeltaDat)
 
 AllDeltaDatcv <- AllDeltaDat %>%
@@ -190,8 +190,10 @@ p1
 file.name1 <- "Figures/03c_SWP_CV_power_analysis_CombQ_sens_analysis.jpg"
 ggsave(p1, filename=file.name1, dpi=600, height=5, width=8)
 
-
-
+alldf8 <- alldf8 %>%
+  mutate(Type = "Correlation") %>%
+  mutate(firstYear = as.numeric(as.character(firstYear)))
+str(alldf8)
 # Power analysis with Cohen's d -------------------------------------------
 
 ## swp data
@@ -336,14 +338,63 @@ p2 <- ggplot(pwrcohen, aes(y=round(nYears, digits=1), x = SignificanceLevel, gro
   geom_point(aes(group = Stressor, col = Stressor)) +
   facet_wrap(~Stressor)+
   ylab("Number of Years") + xlab("Significance Level")
-  theme(panel.background = element_rect(fill = "white", colour = "grey50"))+
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
-  # geom_hline(yintercept=0.8, col = "red", linetype="dashed") +
-  # geom_vline(xintercept="2028", col = "red", linetype="dashed") +
-  theme(legend.position = "none")
+  # theme(panel.background = element_rect(fill = "white", colour = "grey50"))+
+  # theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  # # geom_hline(yintercept=0.8, col = "red", linetype="dashed") +
+  # # geom_vline(xintercept="2028", col = "red", linetype="dashed") +
+  # theme(legend.position = "none")
 
 p2
 
 file.name1 <- "Figures/03c_SWP_CV_power_analysis_cohens_d_sens.jpg"
 ggsave(p2, filename=file.name1, dpi=600, height=5, width=8)
 
+
+pwrcohen <- pwrcohen %>%
+  mutate(Type = "Cohen's D") %>%
+  mutate(firstYear =nYears+2022) 
+  
+
+pwrcohen 
+
+alldf8 <-  alldf8 %>%
+  rename(SignificanceLevel = alpha)
+
+# Both together -----------------------------------------------------------
+
+alldf <- bind_rows(pwrcohen, alldf8)
+
+# alldf <- alldf %>%
+#   mutate(Year = ifelse(is.na(firstYear), (nYears+22),  firstYear))
+
+p1 <- ggplot(alldf8, aes(x=alpha, y = firstYear, group = Stressor, col = Stressor)) +
+  geom_point(aes(group = Stressor, col = Stressor)) +
+  facet_wrap(~Stressor, scales = "free")+
+  ylab("Year") + xlab("Significance Level") +
+  theme(panel.background = element_rect(fill = "white", colour = "grey50"))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  # geom_hline(yintercept=0.8, col = "red", linetype="dashed") +
+  # geom_vline(xintercept="2028", col = "red", linetype="dashed") +
+  theme(legend.position = "none")
+
+p1
+
+alldf
+
+p3 <- ggplot(alldf, aes(y=as.factor(round(firstYear, digits=0)), x = SignificanceLevel, group = Stressor, col = Stressor)) +
+  geom_point(aes(group = Stressor, col = Stressor)) +
+  facet_wrap(~Type)+
+  ylab("Year") + xlab("Significance Level") +
+  theme(panel.background = element_rect(fill = "white", colour = "grey50")) +
+  # theme_classic()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.title = element_blank()) 
+  # geom_hline(yintercept=0.8, col = "red", linetype="dashed") +
+  # geom_vline(xintercept="2028", col = "red", linetype="dashed") +
+  # theme(legend.position = "none")
+
+
+p3
+
+file.name1 <- "Figures/03c_SWP_CV_power_analysis_BOTH_sens.jpg"
+ggsave(p3, filename=file.name1, dpi=600, height=5, width=8)

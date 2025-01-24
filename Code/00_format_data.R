@@ -501,20 +501,20 @@ ggsave(b2, file = out.filename, dpi=300, height=4, width=6)
 # head(bioMeanQ_longx)
 
 ## upload distance and format
-distance <- read.csv("input_data/dist_matrix_New_V2.csv") %>%
-  select(X, SJC.002) %>% rename(PlantID = X) %>%
-  mutate(PlantID2 = gsub(" ", "-", PlantID)) %>%
-  select(-PlantID) %>%
-  rename(DistToSJC002 = SJC.002)
-head(distance)
-
-# sum(unique(bioMeanQ_longx$PlantID) %in% unique(distance$PlantID2))
-
-## join data with distances
-bioMeanQ_long_dist <- full_join(allData, distance, by = c("PlantID" = "PlantID2"))
-
-## save out
-save(bioMeanQ_long_dist, file = "output_data/00_bio_Q_matched_groups_distance_orig.RData")
+# distance <- read.csv("input_data/dist_matrix_New_V2.csv") %>%
+#   select(X, SJC.002) %>% rename(PlantID = X) %>%
+#   mutate(PlantID2 = gsub(" ", "-", PlantID)) %>%
+#   select(-PlantID) %>%
+#   rename(DistToSJC002 = SJC.002)
+# head(distance)
+# 
+# # sum(unique(bioMeanQ_longx$PlantID) %in% unique(distance$PlantID2))
+# 
+# ## join data with distances
+# bioMeanQ_long_dist <- full_join(allData, distance, by = c("PlantID" = "PlantID2"))
+# 
+# ## save out
+# save(bioMeanQ_long_dist, file = "output_data/00_bio_Q_matched_groups_distance_orig.RData")
 
 # Get proportional values for sensitivity analysis ------------------------
 
@@ -522,7 +522,7 @@ save(bioMeanQ_long_dist, file = "output_data/00_bio_Q_matched_groups_distance_or
 ## calculate proportional values of outfall discharge, just group 5 for main outfalls, WN001/2 groups separate
 
 proQ <- bioMeanQ_longx2 %>%
-  filter(!GroupQ == "G5") #%>% ## remove group 5, we're calculating these values
+  filter(!GroupQ == "G5") %>% ## remove group 5, we're calculating these values
   select(Year, Month, Season, SJC002_POM001Combined:SJC_002) %>% ## remove unwanted columns
   pivot_longer(SJC002_POM001Combined:SJC_002, names_to = "SourceOF", values_to = "QOF") %>% ## make longer
   # filter(!GroupQ == "G5") %>% ## remove group 5, we're calculating these values
@@ -647,7 +647,7 @@ distance <- read.csv("input_data/dist_matrix_New_V2.csv") %>%
   select(-PlantID) %>%
   rename(DistToSJC002 = SJC.002)
 head(distance)
-
+distance
 # sum(unique(bioMeanQ_longx$PlantID) %in% unique(distance$PlantID2))
 
 ## join data with distances
@@ -656,9 +656,19 @@ bioMeanQ_long_dist <- full_join(allData, distance, by = c("PlantID" = "PlantID2"
 ## save out
 save(bioMeanQ_long_dist, file = "output_data/00_bio_Q_matched_groups_distance.RData")
 
+## check NAs
+
+colSums(is.na(bioMeanQ_long_dist))
+
 ## plot values for check
 load(file = "output_data/00_bio_Q_matched_groups_distance.RData")
 names(bioMeanQ_long_dist)
+
+ind <- which(is.na(bioMeanQ_long_dist$DistToSJC002))
+
+test <- bioMeanQ_long_dist[ind,]
+
+unique(test$PlantID) ## missing plant IDs are for the oroginal trees of replacement. do not have coords for originals
 
 datax <- bioMeanQ_long_dist %>%
   drop_na(DistToSJC002, SWP)
