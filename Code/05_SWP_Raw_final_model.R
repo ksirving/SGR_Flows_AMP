@@ -710,6 +710,9 @@ load(file = "ignore/06_delta_SWP.Rdata")
 
 length(unique(binData$PlantID))
 
+## 95% confidence intervals
+critval <- 1.96 ## approx 95% CI
+
 ## transform to 0 = decrease (less stress), 1 = increase (more stress)
 binData <- AllDeltaDat %>%
   filter(Type == "Delta", !Group == "G5") %>%
@@ -796,6 +799,8 @@ dfx
 head(spDataPx)
 
 write.csv(dfx, "output_data/05_SWP_pred_stress_per_species_dry_years.csv")
+
+dfx <- read.csv("output_data/05_SWP_pred_stress_per_species_dry_years.csv")
 
 ## plot
 
@@ -1004,6 +1009,8 @@ binDataDry <- binDataP %>%
 
 binData <- bind_rows(binDataDry, binDataOverall)
 head(binData)
+
+write.csv(binData, "05_prob_stress_data_for_figure.csv")
 
 ## plot all data on one plot
 
