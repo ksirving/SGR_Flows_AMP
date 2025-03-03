@@ -5,7 +5,6 @@ library(tidylog)
 library(lubridate)
 
 ## random forest
-# library(rfUtilities)
 library(randomForest)
 library(ks)
 library(sm)
@@ -24,7 +23,7 @@ library(performance)
 library(lme4)
 
 ## output file for figures
-out.dir <- "/Users/katieirving/Library/CloudStorage/OneDrive-SCCWRP/Documents - Katie’s MacBook Pro/git/SGR_Flows_AMP/Figures/"
+out.dir <- "/SGR_Flows_AMP/Figures/"
 
 # Upload data -------------------------------------------------------------
 

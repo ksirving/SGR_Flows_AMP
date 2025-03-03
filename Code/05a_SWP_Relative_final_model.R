@@ -65,7 +65,7 @@ damdata <- bioMeanQ_long_dist %>%
   distinct() %>%
   drop_na(DamageYear) %>% filter(Damage == "Y")
 
-# Relative and delta change -----------------------------------------------
+# Relative  -----------------------------------------------
 
 ## remove columns and make distinct
 bioMeanQ_long_distx <- bioMeanQ_long_dist %>%
