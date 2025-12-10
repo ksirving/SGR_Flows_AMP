@@ -410,6 +410,9 @@ bioMeanQ <- inner_join(alldata, monthlyQ, by = c("Year"), relationship = "many-t
 names(bioMeanQ)
 str(bioMeanQ)
 
+cts <- bioMeanQ %>%
+  count(PlantID)
+
 ## how many tree replacements
 bioMeanQ %>% select(PlantID, Replacement) %>% distinct() %>% group_by(Replacement) %>% tally()
 # 1 FALSE          96
@@ -454,7 +457,7 @@ bioMeanQ_longx <- bioMeanQ_long %>%
    select(-GroupCheck, - Value)  %>% filter(GroupKeep == "Yes") 
 names(bioMeanQ_longx2)
 
-## separate q into gages and outfalls - this gets updated and formatted blow
+## separate q into gages and outfalls - this gets updated and formatted below
 
 bioMeanQ_longx2 <- bioMeanQ_longx %>%
   pivot_wider(names_from = Source, values_from = Q) %>%
@@ -475,6 +478,7 @@ bioMeanQ_longx2 <- bioMeanQ_longx %>%
 
 save(bioMeanQ_longx, file = "output_data/00_bio_Q_matched_groups.RData")
 
+bioMeanQ_longx2
 
 ## plot bio against hydro
 
@@ -610,7 +614,6 @@ gr4 <- bioMeanQ_longx2 %>%
   pivot_longer(c(SJC002_POM001Combined:SJC_002, WN001,WN002), names_to = "SourceOF", values_to = "QOF") %>% ## make longer to match other data
   mutate(QPro1 = QOF, QPro2 = QOF, QPro5 = QOF, QPro10 = QOF, QPro20 = QOF) ## add in columns of proportion - should repeat values
 
-
 ## join all groups together
 
 allGrps <- bind_rows(gr123, proQx1, gr4) %>%
@@ -630,9 +633,9 @@ others <- bioMeanQ_longx2 %>%
 names(others)
 
 ## join main data with new proportional Q data
-allData <- full_join(others, allGrps, by = c("Year", "Season", "Group", "Month"))
+allDataSens <- full_join(others, allGrps, by = c("Year", "Season", "Group", "Month"))
 
-head(allData)
+head(allDataSens)
 
 # Add distance ------------------------------------------------------------
 
@@ -650,8 +653,10 @@ head(distance)
 distance
 # sum(unique(bioMeanQ_longx$PlantID) %in% unique(distance$PlantID2))
 
-## join data with distances
-bioMeanQ_long_dist <- full_join(allData, distance, by = c("PlantID" = "PlantID2"))
+
+# Join for main data ------------------------------------------------------
+
+bioMeanQ_long_dist <- full_join(bioMeanQ_longx2, distance, by = c("PlantID" = "PlantID2"))
 
 ## save out
 save(bioMeanQ_long_dist, file = "output_data/00_bio_Q_matched_groups_distance.RData")
@@ -659,6 +664,9 @@ save(bioMeanQ_long_dist, file = "output_data/00_bio_Q_matched_groups_distance.RD
 ## check NAs
 
 colSums(is.na(bioMeanQ_long_dist))
+## substrate = 1014
+## RainfallIntensity = 666
+## DistToSJC002 = 3072
 
 ## plot values for check
 load(file = "output_data/00_bio_Q_matched_groups_distance.RData")
@@ -686,3 +694,13 @@ d2
 
 out.filename <- paste0(out.dir,"00_CV_distance.jpg")
 ggsave(d2, file = out.filename, dpi=300, height=4, width=6)
+# Join for sensivity data -------------------------------------------------
+
+
+## join data with distances
+bioMeanQ_long_distProp <- full_join(allDataSens, distance, by = c("PlantID" = "PlantID2"))
+
+## save out
+save(bioMeanQ_long_distProp, file = "output_data/00_bio_Q_matched_groups_distance_for_sens.RData")
+
+

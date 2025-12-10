@@ -74,6 +74,12 @@ rf.data <- bioMeanQ_long_distJoin %>%
   filter(Source %in% c("USGSGauge11087020(MGD)", "LACDPWG44B(MGD)", "LACDPWF313B(MGD)")) %>%
   select(-Source)
 
+## data length
+dim(rf.data)
+
+## number of NAs
+colSums(is.na(rf.data))
+
 ## make plantID a numeric
 
 rf.data$PlantIDNum <- as.numeric(factor(rf.data$PlantID))

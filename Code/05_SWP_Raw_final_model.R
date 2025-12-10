@@ -34,7 +34,7 @@ names(bioMeanQ_long_dist)
 ## remove columns and make distinct
 bioMeanQ_long_distx <- bioMeanQ_long_dist %>%
   group_by(PlantID) %>%
-  select(PlantID:Year, SWP , Replacement, Damage) %>%
+  select(PlantID:Year, SWP , Replacement, Damage) %>% 
   distinct()
 
 bioMeanQ_long_distx
@@ -72,7 +72,18 @@ rf.data <- bioMeanQ_long_distJoin %>%
          Substrate = as.factor(Substrate),
          Damage2 = as.factor(Damage2)) %>%
   filter(Source %in% c("USGSGauge11087020(MGD)", "LACDPWG44B(MGD)", "LACDPWF313B(MGD)")) %>%
-  select(-Source)
+  select(-Source) %>%
+  distinct()
+
+## data length
+dim(rf.data)
+
+## number of NAs
+colSums(is.na(rf.data))
+
+## substrate = 504
+## RainfallIntensity = 330
+## DistToSJC002 = 1536
 
 ## make plantID a numeric
 
@@ -81,7 +92,14 @@ rf.data$PlantIDNum <- as.numeric(factor(rf.data$PlantID))
 ## define plantids 
 plantids <- rf.data %>%
   select(PlantID, Species, Group, PlantIDNum) 
-  
+
+unique(plantids$PlantID)
+
+test <- rf.data %>%
+  count(PlantID)
+
+  group_by(PlantID) %>%
+  summarise(nRow = nrow(RainFallMod))
 
 plantidsD <- rf.data %>%
   select(PlantID, Species, Group, PlantIDNum) %>%

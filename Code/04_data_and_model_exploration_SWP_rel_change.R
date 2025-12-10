@@ -22,6 +22,8 @@ load(file = "output_data/00_bio_Q_matched_groups_distance.RData")
 head(bioMeanQ_long_dist)
 names(bioMeanQ_long_dist)
 
+dim(bioMeanQ_long_dist)
+
 ## check damaged trees
 ## 
 damTrees <- bioMeanQ_long_dist %>%
