@@ -39,7 +39,7 @@ rf.data <- bioMeanQ_long_dist %>%
   # mutate(POS = recode_factor(POS, blanks = NA)) %>%
   filter(Source %in% c("USGSGauge11087020(MGD)", "LACDPWG44B(MGD)", "LACDPWF313B(MGD)")) %>%
   drop_na(SWP, CV) %>%
-  select(-Source)
+  dplyr::select(-Source)
 
 sum(is.na(rf.data$POS))
 dim(rf.data)
@@ -48,10 +48,10 @@ str(rf.data)
 
 ## define and remove plantids 
 plantids <- rf.data %>%
-  select(PlantID)
+  dplyr::select(PlantID)
 
 rf.data <- rf.data %>%
-  select(-PlantID)
+  dplyr::select(-PlantID)
 
 rf.datax <- cbind(plantids, rf.data)
 rf.datax
@@ -64,7 +64,7 @@ rf.data.imputedcv <- rfImpute(CV ~ ., rf.data)
 rf.data.imputedcv
 
 ## correlation of SWP and sjc002
-
+?cor
 cor(rf.data.imputed$SWP, rf.data.imputed$SJC_002) ## -0.03062607
 cor(rf.data.imputedcv$CV, rf.data.imputed$SJC_002) ## 0.0206011
 
@@ -172,7 +172,7 @@ df$Year <- as.factor(x1)
 
 # Power analysis with Cohen's d -------------------------------------------
 rf.data.imputed
-
+rf.data
 ## began reducing discharge in December 2020
 df2020 <- rf.data %>%
   filter(Year == 2020) %>%

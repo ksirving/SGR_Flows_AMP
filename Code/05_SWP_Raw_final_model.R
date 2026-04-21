@@ -93,13 +93,11 @@ rf.data$PlantIDNum <- as.numeric(factor(rf.data$PlantID))
 plantids <- rf.data %>%
   select(PlantID, Species, Group, PlantIDNum) 
 
-unique(plantids$PlantID)
+# unique(plantids$PlantID)
+# 
+# test <- rf.data %>%
+#   count(PlantID)
 
-test <- rf.data %>%
-  count(PlantID)
-
-  group_by(PlantID) %>%
-  summarise(nRow = nrow(RainFallMod))
 
 plantidsD <- rf.data %>%
   select(PlantID, Species, Group, PlantIDNum) %>%
@@ -117,24 +115,34 @@ dim(rf.data)
 
 # Impute Values -----------------------------------------------------------
 
-set.seed(234) ## reproducibility
-
-# NUMBER OF BOOTSTRAP REPLICATES
+# set.seed(234) ## reproducibility
+# 
+# # NUMBER OF BOOTSTRAP REPLICATES
 b=10001
-
+# 
 sp=0.6 ## for dependence plots
+# 
+# head(rf.data)
+# which(is.na(rf.data$WN002))
+# sum(is.na(rf.data))
+# colSums(is.na(rf.data))
+# 
+# ## impute missing values
+# rf.data.imputed <- rfImpute(SWP ~., rf.data)
+# head(rf.data.imputed)
+# dim(rf.data.imputed)
+# 
+# # save(rf.data.imputed, file = "ignore/05_rf_data_imputed_SWP_raw.RData")
+# 
+# load(file = "ignore/05_rf_data_imputed_SWP_raw.RData") #### change WN to 0 for grps 1,2,3
+# 
+# head(rf.data.imputed)
+# 
+# rf.data.imputed <- rf.data.imputed %>%
+#   mutate(WN001 = case_when(Group %in% c("G1", "G2", "G3") ~ 0, .default = WN001),
+#          WN002 = case_when(Group %in% c("G1", "G2", "G3") ~ 0, .default = WN002))
 
-head(rf.data)
-which(is.na(rf.data$WN002))
-sum(is.na(rf.data))
-colSums(is.na(rf.data))
-
-## impute missing values
-rf.data.imputed <- rfImpute(SWP ~., rf.data)
-head(rf.data.imputed)
-dim(rf.data.imputed)
-
-save(rf.data.imputed, file = "ignore/05_rf_data_imputed_SWP_raw.RData")
+# Random Forest Model -----------------------------------------------------
 
 load(file = "ignore/05_rf_data_imputed_SWP_raw.RData") #### change WN to 0 for grps 1,2,3
 
@@ -143,8 +151,6 @@ head(rf.data.imputed)
 rf.data.imputed <- rf.data.imputed %>%
   mutate(WN001 = case_when(Group %in% c("G1", "G2", "G3") ~ 0, .default = WN001),
          WN002 = case_when(Group %in% c("G1", "G2", "G3") ~ 0, .default = WN002))
-
-# Random Forest Model -----------------------------------------------------
 
 ## get path for functions
 source("/Users/katieirving/Library/CloudStorage/OneDrive-SCCWRP/Documents - Katie’s MacBook Pro/git/RB9_Vulnerability_Arroyo_Toad/original_model/Current/randomForests/PARTITIONING/DATA3/Functions.R")
@@ -169,18 +175,20 @@ importance(rf, type = 1) ## season
 
 ## get importance from model
 imp <- as.data.frame(importance(rf, type = 1))
-
+imp
 ## get all variables over 0 (NA negative variables)
 vars <- ifelse(imp$`%IncMSE` > 0, rownames(imp), NA) 
 vars <- vars[!is.na(vars)] ## remove NAs - neg vars
-
+vars
 ## only keep positive importance vars from main df
 rf.data.red <- rf.data.imputed %>%
   select(SWP, all_of(vars), -LifeForm) %>%
   mutate(Species = as.factor(Species), Group = as.factor(Group), Year = as.factor(Year)) %>% 
   droplevels()
 
-save(rf.data.red, file = "ignore/05_SWP_red_imputed_rf_data.RData")
+# save(rf.data.red, file = "ignore/05_SWP_red_imputed_rf_data.RData")
+
+load(file = "ignore/05_SWP_red_imputed_rf_data.RData")
 
 ## format data for reduced model
 rf.data.val <- rf.data.red %>%
@@ -220,6 +228,8 @@ importance(rfD, type = 1) ## season
 # Variable importance -----------------------------------------------------
 
 range01 <- function(x){(x-min(x))/(max(x)-min(x))}
+
+load(file = "models/05_SWP_final_rf_Raw.RData") ## rf
 
 ## get mean and scale and % to make relative
 
@@ -266,6 +276,7 @@ ImpMean$VariableHuman <- factor(ImpMean$VariableHuman, levels=ImpMean[order(ImpM
 ## add mod peformance
 ImpMean <- ImpMean %>%
   mutate(RFVarExpl = mean(rf$rsq))
+ImpMean
 
 write.csv(ImpMean, "output_data/05_SWP_var_imp.csv")
 
@@ -274,11 +285,25 @@ i1 <- ggplot(ImpMean, aes(x=MeanImpPerc, y=VariableHuman)) +
   geom_point() +
   scale_x_continuous("Relative Importance (%)") +
   scale_y_discrete("") +
+  theme(text = element_text(size = 30)) +
   theme_bw()
 i1
+i1 <- ggplot(ImpMean, aes(x = MeanImpPerc, y = VariableHuman)) +
+  geom_point() +
+  scale_x_continuous("Relative Importance (%)") +
+  scale_y_discrete("") +
+  theme_bw() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 15)
+    # plot.title = element_text(size = 13),
+    # legend.text = element_text(size = 9),
+    # legend.title = element_text(size = 10)
+  )
+i1
 
-file.name1 <- "Figures/05_relative_importance_SWP_raw_final_model.jpg"
-ggsave(i1, filename=file.name1, dpi=300, height=5, width=8)
+file.name1 <- "Figures/05_relative_importance_SWP_raw_final_modelPub.jpg"
+ggsave(i1, filename=file.name1, dpi=600, height=5, width=8)
 
 
 # Partial Plots -----------------------------------------------------------
@@ -569,6 +594,7 @@ for(s in 1:length(species)) {
 
 head(df)
 head(spDataPx)
+write.csv(spDataPx, "FigureData/05_prob_stress_per_species.csv")
 
 ## plot
 
@@ -577,12 +603,19 @@ s1 <- ggplot(spDataPx, aes(x = CombQ, y = ProbabilityOfStress, group = Species, 
   # facet_wrap(~Season, scale = "free_x") +
   geom_ribbon( aes(ymin = lwr, ymax = upr), alpha = .15) +
   scale_x_continuous(name = "Delta Combined Q (MGD)") +
-  scale_y_continuous(name = "Probability of Stress")
+  scale_y_continuous(name = "Probability of Stress") +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 15),
+    # plot.title = element_text(size = 13),
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 12)
+  )
 
 s1
 
-file.name1 <- "Figures/05_probability_of_stress_per_species.jpg"
-ggsave(s1, filename=file.name1, dpi=300, height=5, width=8)
+file.name1 <- "Figures/05_probability_of_stress_per_speciesPub.jpg"
+ggsave(s1, filename=file.name1, dpi=600, height=5, width=8)
 
 
 ## model altogether
@@ -614,7 +647,14 @@ s2 <- ggplot(binDataP, aes(x = CombQ, y = ProbabilityOfStress)) +
   geom_ribbon( aes(ymin = lwr, ymax = upr), alpha = .15) +
   # facet_wrap(~Season, scale = "free_x") +
   scale_x_continuous(name = "Delta Combined Q (MGD)") +
-  scale_y_continuous(name = "Probability of Stress")
+  scale_y_continuous(name = "Probability of Stress") +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 15),
+    plot.title = element_text(size = 13),
+    legend.text = element_text(size = 9),
+    legend.title = element_text(size = 10)
+  )
 
 s2
 
@@ -715,6 +755,7 @@ file.name1 <- "Figures/05_probability_of_stress_overall_current_delta_range.jpg"
 ggsave(s3, filename=file.name1, dpi=300, height=10, width=15)
 
 ## change name of df and add type of data
+str(b)
 
 binDataOverall <- binDataP %>%
   mutate(Type = "Overall")
@@ -1027,12 +1068,16 @@ binDataDry <- binDataP %>%
 binData <- bind_rows(binDataDry, binDataOverall)
 head(binData)
 
+test <- binData %>%
+  count(Type, CombQ) %>%
+  filter(n > 1)
+
 write.csv(binData, "05_prob_stress_data_for_figure.csv")
 
 ## plot all data on one plot
 
 s4 <- ggplot(binData, aes(x = CombQ, y = ProbabilityOfStress)) +
-  geom_smooth(aes(col = Type, fill = Type))  +
+  geom_line(aes(col = Type, fill = Type))  +
   geom_ribbon( aes(col = Type, fill = Type,ymin = lwr, ymax = upr), alpha = .15) +
   scale_fill_manual(values = cols[c(3,5, 8)]) +
   scale_colour_manual(values = cols[c(3,5, 8)]) +
@@ -1060,6 +1105,7 @@ ggsave(s4, filename=file.name1, dpi=300, height=10, width=15)
 
 # Mixed Model -------------------------------------------------------------
 
+load(file = "ignore/05_SWP_red_imputed_rf_data.RData")
 ## join swp and plantids back, drop nas in SWP
 dataall <- inner_join(plantidsD, rf.data.imputed, by = c("PlantIDNum", "Group", "Species")) %>%
   drop_na(SWP) %>%
@@ -1097,8 +1143,8 @@ summary(mod1)
 anova(mod1)
 check_singularity(mod1) ## False
 icc(mod1, by_group = TRUE)
-icc(mod1)
-r2_nakagawa(mod1) ## 0.653
+icc(mod1) # 0.179
+r2_nakagawa(mod1) ## 0.229
 
 set_theme(base = theme_classic(), #To remove the background color and the grids
           theme.font = 'serif',   #To change the font type
@@ -1150,18 +1196,29 @@ rf.data.rescalex <- rf.data.rescale %>%
 head(rf.data.rescalex)
 str(rf.data.rescalex)
 
+write.csv(rf.data.rescalex, "05_swp_mixedModel_for_figures.csv")
+
+
 m1 <- ggplot(data = rf.data.rescalex, aes(y = fit.c, x = SJC002_POM001Combined, group = Species, col = Species)) +
   geom_smooth(method = "lm") +
   facet_wrap(~Season) +
   scale_x_continuous(name = "Combined Q (MGD)") +
-  scale_y_continuous(name = "SWP: Mixed Model Fit")
+  scale_y_continuous(name = "SWP: Mixed Model Fit (atm)") +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 15),
+    plot.title = element_text(size = 13),
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 15)
+  )
 # geom_line(aes(col = Species), linewidth = 1)  
 
 
 m1
 
-out.filename <- paste0(out.dir,"05_mixed_mod_combQ_per_species.jpg")
-ggsave(m1, file = out.filename, dpi=300, height=10, width=12)
+out.filename <- paste0(out.dir,"05_mixed_mod_combQ_per_speciesPub.jpg")
+out.filename <- paste0(out.dir,"Figure6_mixedSWP.jpg")
+ggsave(m1, file = out.filename, dpi=600, height=10, width=12)
 
 ## plot distance per species
 m2 <- ggplot(data = rf.data.rescalex, aes(y = fit.c, x = DistToSJC002, group = Species, col = Species)) +

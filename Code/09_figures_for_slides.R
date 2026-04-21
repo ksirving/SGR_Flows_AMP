@@ -3,13 +3,15 @@
 library(tidyverse)
 library(tidylog)
 
-
+getwd()
 ## col blind pallette
 cols <- palette.colors()
 cols
 ## data
-binData <- read.csv( "05_prob_stress_data_for_figure.csv")
+v
+binData <- read.csv( "/Users/katieirving/Library/CloudStorage/OneDrive-SCCWRP/Documents - Katie’s MacBook Pro/git/SGR_Flows_AMP/05_prob_stress_data_for_figure.csv")
 head(binData)
+write.csv(binData, "FigureData/09_SWP_prob_stress_figure.csv")
 
 unique(binData$Type)
 ## plot just mod curve. no Q labels

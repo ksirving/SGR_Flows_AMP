@@ -503,20 +503,20 @@ ggsave(b2, file = out.filename, dpi=300, height=4, width=6)
 ## data
 # load(file = "output_data/00_bio_Q_matched_groups.RData")
 # head(bioMeanQ_longx)
-
-## upload distance and format
+# 
+# ## upload distance and format
 # distance <- read.csv("input_data/dist_matrix_New_V2.csv") %>%
 #   select(X, SJC.002) %>% rename(PlantID = X) %>%
 #   mutate(PlantID2 = gsub(" ", "-", PlantID)) %>%
 #   select(-PlantID) %>%
 #   rename(DistToSJC002 = SJC.002)
 # head(distance)
-# 
-# # sum(unique(bioMeanQ_longx$PlantID) %in% unique(distance$PlantID2))
-# 
+# #
+# sum(unique(bioMeanQ_longx$PlantID) %in% unique(distance$PlantID2))
+# #
 # ## join data with distances
-# bioMeanQ_long_dist <- full_join(allData, distance, by = c("PlantID" = "PlantID2"))
-# 
+# bioMeanQ_long_dist <- full_join(alldata, distance, by = c("PlantID" = "PlantID2"))
+# #
 # ## save out
 # save(bioMeanQ_long_dist, file = "output_data/00_bio_Q_matched_groups_distance_orig.RData")
 
@@ -660,6 +660,8 @@ bioMeanQ_long_dist <- full_join(bioMeanQ_longx2, distance, by = c("PlantID" = "P
 
 ## save out
 save(bioMeanQ_long_dist, file = "output_data/00_bio_Q_matched_groups_distance.RData")
+
+# save(bioMeanQ_long_dist, file = "output_data/00_bio_Q_matched_groups_distancetest.RData")
 
 ## check NAs
 

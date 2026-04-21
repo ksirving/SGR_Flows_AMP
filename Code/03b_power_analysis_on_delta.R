@@ -162,6 +162,8 @@ write.csv(dfxCV, "output_data/03b_pvals_sens_CV_power_analysis")
 alldf <- bind_rows(dfx,dfxCV)
 alldf
 
+write.csv(alldf, "FigureData/03b_powerAnalysis_Fig13.csv")
+
 alldf <- alldf %>%
   filter(alpha == 0.05)
 

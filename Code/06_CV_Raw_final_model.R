@@ -119,15 +119,16 @@ sp=0.6 ## for dependence plots
 rf.data.imputed <- rfImpute(CV ~ ., rf.data)
 head(rf.data.imputed)
 
-save(rf.data.imputed, file = "ignore/06_rf_data_imputed_CV_raw.RData")
+# save(rf.data.imputed, file = "ignore/06_rf_data_imputed_CV_raw.RData")
+
+
+# Random Forest Model -----------------------------------------------------
 
 load(file = "ignore/06_rf_data_imputed_CV_raw.RData") ## change WN to 0 for grps 1,2,3
 
 rf.data.imputed <- rf.data.imputed %>%
   mutate(WN001 = case_when(Group %in% c("G1", "G2", "G3") ~ 0, .default = WN001),
          WN002 = case_when(Group %in% c("G1", "G2", "G3") ~ 0, .default = WN002))
-
-# Random Forest Model -----------------------------------------------------
 
 ## get path for functions
 source("/Users/katieirving/Library/CloudStorage/OneDrive-SCCWRP/Documents - Katie’s MacBook Pro/git/RB9_Vulnerability_Arroyo_Toad/original_model/Current/randomForests/PARTITIONING/DATA3/Functions.R")
@@ -152,7 +153,7 @@ importance(rf, type = 1) ## season
 
 ## get importance from model
 imp <- as.data.frame(importance(rf, type = 1))
-
+imp
 ## get all variables over 0 (NA negative variables)
 vars <- ifelse(imp$`%IncMSE` > 0, rownames(imp), NA) 
 vars <- vars[!is.na(vars)] ## remove NAs - neg vars
@@ -248,8 +249,11 @@ ImpMean$VariableHuman
 ## add mod peformance
 ImpMean <- ImpMean %>%
   mutate(RFVarExpl = mean(rf$rsq))
+ImpMean
+# write.csv(ImpMean, "output_data/06_CV_var_imp.csv")
 
-write.csv(ImpMean, "output_data/06_CV_var_imp.csv")
+ImpMean2 <- read.csv("output_data/06_CV_var_imp.csv") 
+ImpMean2
 
 ## plot
 i1 <- ggplot(ImpMean, aes(x=MeanImpPerc, y=VariableHuman)) +
@@ -315,6 +319,7 @@ dev.off()
 # Probability of increase in CV ------------------------------------------
 
 dim(rf.data.imputed)
+
 ## join CV and plantids back, drop nas in CV
 dataall <- inner_join(plantidsD, rf.data.imputed, by = c("PlantIDNum", "Group", "Species")) %>%
   drop_na(CV) %>%
@@ -563,6 +568,7 @@ head(df)
 
 write.csv(df, "output_data/06_CV_species_prob_stress_Coefs.csv")
 head(spDataPx)
+write.csv(spDataPx, "FigureData/06_CV_prob_stress_species.csv" )
 
 ## plot
 
@@ -809,11 +815,13 @@ rf.data.rescalex <- rf.data.rescale %>%
 head(rf.data.rescalex)
 str(rf.data.rescalex)
 
+write.csv(rf.data.rescalex, "FigureData/06_mixed_mod_perSpecies.csv")
+
 m1 <- ggplot(data = rf.data.rescalex, aes(y = fit.c, x = SJC002_POM001Combined, group = Species, col = Species)) +
   geom_smooth(method = "lm") +
   facet_wrap(~Season) +
   scale_x_continuous(name = "Combined Q (MGD)") +
-  scale_y_continuous(name = "CV: Mixed Model Fit")
+  scale_y_continuous(name = "CV: Mixed Model Fit (%)")
 # geom_line(aes(col = Species), linewidth = 1)  
 
 

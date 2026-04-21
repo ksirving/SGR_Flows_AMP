@@ -367,7 +367,7 @@ alldf <- bind_rows(pwrcohen, alldf8)
 # alldf <- alldf %>%
 #   mutate(Year = ifelse(is.na(firstYear), (nYears+22),  firstYear))
 
-p1 <- ggplot(alldf8, aes(x=alpha, y = firstYear, group = Stressor, col = Stressor)) +
+p1 <- ggplot(alldf, aes(x=alpha, y = firstYear, group = Stressor, col = Stressor)) +
   geom_point(aes(group = Stressor, col = Stressor)) +
   facet_wrap(~Stressor, scales = "free")+
   ylab("Year") + xlab("Significance Level") +
@@ -380,6 +380,8 @@ p1 <- ggplot(alldf8, aes(x=alpha, y = firstYear, group = Stressor, col = Stresso
 p1
 
 alldf
+
+write.csv(alldf, "FigureData/03c_power_analysis_sens.csv")
 
 p3 <- ggplot(alldf, aes(y=as.factor(round(firstYear, digits=0)), x = SignificanceLevel, group = Stressor, col = Stressor)) +
   geom_point(aes(group = Stressor, col = Stressor)) +
